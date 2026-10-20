@@ -53,12 +53,17 @@ final class Recs {
     private static final String IMAGES = "https://image.tmdb.org/t/p/original";
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 3;
+    private static final int CACHE_VERSION = 4;
+    /** How many titles in the list, and how many of the most popular on each of the TV's services go into it. */
+    private static final int MAX_PICKS = 40, PER_SERVICE = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     static final String[] PERIOD_LABEL = {"PARA ESTA MANHÃ", "PARA ESTA TARDE", "PARA ESTA NOITE"};
     static final String[] PERIOD_LABEL_EN = {"THIS MORNING", "THIS AFTERNOON", "TONIGHT"};
     static final String[] PERIOD_LABEL_FR = {"POUR CE MATIN", "POUR CET APRÈS-MIDI", "POUR CE SOIR"};
-    /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
+    /**
+     * Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). Several packages for one
+     * app are separated by "|" (the first one the TV has is used). The ones the TV doesn't have are simply left out.
+     */
     private static final String[][] SERVICES = {
         {"netflix", "netflix", "com.netflix.ninja"},
         {"prime video", "prime", "com.amazon.amazonvideo.livingroom"},
@@ -67,8 +72,13 @@ final class Recs {
         {"paramount", "paramount", "com.cbs.ott"},
         {"peacock", "peacock", "com.peacocktv.peacockandroid"},
         {"globoplay", "globoplay", "com.globo.globotv"},
-        {"max", "max", "com.wbd.stream"},
+        {"max", "max", "com.wbd.stream|com.hbo.hbonow"},
         {"apple tv", "appletv", "com.apple.atve.androidtv.appletv"},
+        {"crunchyroll", "crunchyroll", "com.crunchyroll.crunchyroid"},
+        {"canal+", "canal", "com.canal.android.canal"},
+        {"m6+", "m6", "fr.m6.m6replay|fr.m6.m6replay.firetv"},
+        {"tf1+", "tf1", "fr.tf1.mytf1"},
+        {"arte", "arte", "tv.arte.plus7"},
     };
     private static final Map<String, String> SERVICE_NAME = new HashMap<>();
     static {
@@ -81,6 +91,11 @@ final class Recs {
         SERVICE_NAME.put("globoplay", "Globoplay");
         SERVICE_NAME.put("max", "Max");
         SERVICE_NAME.put("appletv", "Apple TV");
+        SERVICE_NAME.put("crunchyroll", "Crunchyroll");
+        SERVICE_NAME.put("canal", "Canal+");
+        SERVICE_NAME.put("m6", "M6+");
+        SERVICE_NAME.put("tf1", "TF1+");
+        SERVICE_NAME.put("arte", "Arte");
     }
     /** Country for "what streams where" (config.properties "tmdb_region", e.g. US, GB, BR). */
     private static String region() {
@@ -372,7 +387,7 @@ final class Recs {
         for (int i = 0; i < providers.length(); i++) {
             JSONObject o = providers.getJSONObject(i);
             String[] s = service(o.optString("provider_name"));
-            if (s != null && installed(s[2])) services.put(o.getInt("provider_id"), s);
+            if (s != null && installedPackage(s) != null) services.put(o.getInt("provider_id"), s);
         }
         if (services.isEmpty()) throw new IOException("none of the TV's streaming services are on TMDB");
         StringBuilder ids = new StringBuilder();
@@ -404,16 +419,67 @@ final class Recs {
         List<Pick> newMovies = new ArrayList<>(), newShows = new ArrayList<>();
         for (int i = 0; i < movies.length(); i++) add(newMovies, movies.getJSONObject(i), "movie");
         for (int i = 0; i < shows.length(); i++) add(newShows, shows.getJSONObject(i), "tv");
-        // Trending first, then the new releases; movies and shows alternating, without repeats, up to 24.
+        // 3. A few of the most popular on each service (movies from the past 2 years, shows with a new episode in the
+        //    past 6 months), so Netflix doesn't crowd out the others (Prime Video, Crunchyroll, M6+...). A service's
+        //    trending titles come first.
+        Map<String, List<Integer>> idsByApp = new java.util.LinkedHashMap<>();
+        Map<String, String[]> serviceByApp = new HashMap<>();
+        for (Map.Entry<Integer, String[]> e : services.entrySet()) {
+            if (!idsByApp.containsKey(e.getValue()[1])) idsByApp.put(e.getValue()[1], new ArrayList<Integer>());
+            idsByApp.get(e.getValue()[1]).add(e.getKey());
+            serviceByApp.put(e.getValue()[1], e.getValue());
+        }
+        List<List<Pick>> perService = new ArrayList<>();
+        for (Map.Entry<String, List<Integer>> e : idsByApp.entrySet()) {
+            StringBuilder ids2 = new StringBuilder();
+            for (int id : e.getValue()) ids2.append(ids2.length() == 0 ? "" : "|").append(id);
+            String one = "&language=" + lang() + "&watch_region=" + region() + "&with_watch_monetization_types=flatrate&include_adult=false"
+                    + "&sort_by=popularity.desc&with_watch_providers=" + URLEncoder.encode(ids2.toString(), "UTF-8");
+            String[] service = serviceByApp.get(e.getKey());
+            List<Pick> top = new ArrayList<>(), topShows = new ArrayList<>();
+            try {
+                JSONArray jm = get("/discover/movie?vote_count.gte=100&primary_release_date.gte=" + day(-730)
+                        + "&primary_release_date.lte=" + day(0) + one).getJSONArray("results");
+                JSONArray jt = get("/discover/tv?vote_count.gte=50&air_date.gte=" + day(-180) + "&air_date.lte=" + day(0)
+                        + one).getJSONArray("results");
+                for (int i = 0; i < jm.length() && top.size() < PER_SERVICE; i++) add(top, jm.getJSONObject(i), "movie");
+                for (int i = 0; i < jt.length() && topShows.size() < PER_SERVICE; i++) add(topShows, jt.getJSONObject(i), "tv");
+            } catch (Exception ex) {
+                AppLog.w("recommendations on " + e.getKey() + ": " + ex.getMessage());
+            }
+            for (Pick pick : top) { pick.app = service[1]; pick.pkg = installedPackage(service); }
+            for (Pick pick : topShows) { pick.app = service[1]; pick.pkg = installedPackage(service); }
+            List<Pick> mine = new ArrayList<>();
+            java.util.Set<String> own = new java.util.HashSet<>();
+            alternate(mine, own, filterApp(hotMovies, e.getKey()), filterApp(hotShows, e.getKey()), MAX_PICKS);
+            alternate(mine, own, top, topShows, MAX_PICKS);
+            perService.add(mine);
+        }
+        // One from each service in turn, then whatever is new on any of them; movies and shows alternating.
         List<Pick> list = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        alternate(list, seen, hotMovies, hotShows, 24);
-        alternate(list, seen, newMovies, newShows, 24);
+        for (int round = 0; list.size() < MAX_PICKS; round++) {
+            boolean any = false;
+            for (List<Pick> mine : perService) {
+                if (round >= mine.size()) continue;
+                any = true;
+                if (list.size() < MAX_PICKS && seen.add(key(mine.get(round)))) list.add(mine.get(round));
+            }
+            if (!any) break;
+        }
+        alternate(list, seen, hotMovies, hotShows, MAX_PICKS);
+        alternate(list, seen, newMovies, newShows, MAX_PICKS);
         if (list.isEmpty()) throw new IOException("TMDB returned no recommendations");
         picks = list;
         period = p;
         listAt = System.currentTimeMillis();
         listLang = Ui.lang;
+    }
+
+    private static List<Pick> filterApp(List<Pick> picks, String app) {
+        List<Pick> out = new ArrayList<>();
+        for (Pick p : picks) if (app.equals(p.app)) out.add(p);
+        return out;
     }
 
     /** Language of titles and genres; the services come from the region. */
@@ -475,9 +541,9 @@ final class Recs {
         JSONArray flat = br == null ? null : br.optJSONArray("flatrate");
         for (int i = 0; flat != null && i < flat.length() && p.app == null; i++) {
             String[] s = service(flat.getJSONObject(i).optString("provider_name"));
-            if (s != null && installed(s[2])) {
+            if (s != null && installedPackage(s) != null) {
                 p.app = s[1];
-                p.pkg = s[2];
+                p.pkg = installedPackage(s);
             }
         }
         if (p.app != null) parts.add(SERVICE_NAME.get(p.app));
@@ -536,14 +602,19 @@ final class Recs {
 
     private static String[] service(String name) {
         String n = name.toLowerCase(Locale.ROOT);
+        if (n.contains("channel") || n.endsWith(" store") || n.contains("amazon") && !n.contains("prime video")) return null;
         for (String[] s : SERVICES) {
-            if (s[0].equals("max") ? n.matches(".*\\bmax\\b.*") : n.contains(s[0])) return s;
+            if (s[0].equals("max") || s[0].equals("arte") ? n.matches(".*\\b" + s[0] + "\\b.*") : n.contains(s[0])) return s;
         }
         return null;
     }
 
-    private boolean installed(String pkg) {
-        return HomeApps.launchIntent(context.getPackageManager(), pkg) != null;
+    /** The first of the service's packages that the TV has, or null. */
+    private String installedPackage(String[] service) {
+        for (String pkg : service[2].split("\\|")) {
+            if (HomeApps.launchIntent(context.getPackageManager(), pkg) != null) return pkg;
+        }
+        return null;
     }
 
     private JSONObject get(String path) throws IOException, org.json.JSONException {
@@ -627,9 +698,9 @@ final class Recs {
 
     private static void prune(File dir) {
         File[] files = dir.listFiles();
-        if (files == null || files.length <= 24) return;
+        if (files == null || files.length <= MAX_PICKS) return;
         Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        for (int i = 0; i < files.length - 24; i++) {
+        for (int i = 0; i < files.length - MAX_PICKS; i++) {
             //noinspection ResultOfMethodCallIgnored
             files[i].delete();
         }
