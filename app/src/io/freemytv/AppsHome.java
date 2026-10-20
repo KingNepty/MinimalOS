@@ -39,7 +39,7 @@ import java.util.concurrent.Executors;
  * Everything is drawn with fast paths only (shader-filled rounded rectangles, one pre-blurred shadow): no clips, no live
  * blurs. It draws only while something moves.
  */
-final class AppsHome extends View implements Choreographer.FrameCallback {
+final class AppsHome extends View implements Choreographer.FrameCallback, HomeData.Listener {
     // Layout, in a 1920 × 1080 space (scaled by k).
     private static final float MARGIN = 120, GRID_W = 1632;
     private static final float PANEL_TOP = 692, PANEL_PAD = 40, PANEL_PAD_V = 34, HEADER_H = 64, SCROLL_UNIT = 100;
@@ -102,6 +102,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
     private final Activity activity;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Click click;
+    private final HomeData data;
+    private Paint weatherPaint;
 
     private List<HomeApps.Item> apps = new ArrayList<>();
     private int[] brand = new int[0];
@@ -145,6 +147,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         super(a);
         activity = a;
         click = new Click(a);
+        data = HomeData.get(a);
         for (int i = 0; i < pillFocus.length; i++) {
             pillFocus[i] = new Spring(0.28f, 0.85f, 0);
             pillRects[i] = new RectF();
@@ -172,6 +175,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
     void resume() {
         if (running) return;
         running = true;
+        data.addListener(this);
+        data.refreshIfStale();
         lastNanos = 0;
         lastMinute = -1;
         buildPills();
@@ -184,6 +189,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
 
     void pause() {
         running = false;
+        data.removeListener(this);
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(minuteTick);
     }
@@ -209,7 +215,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         @Override public void run() {
             if (!running) return;
             long minute = System.currentTimeMillis() / 60_000;
-            if (minute != lastMinute) invalidate();
+            if (minute != lastMinute) {
+                data.refreshIfStale();
+                invalidate();
+            }
             handler.postDelayed(this, 15_000);
         }
     };
@@ -291,6 +300,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         suffixPaint = Ui.text(Ui.semibold, 30 * k, 0xB3FFFFFF);
         datePaint = Ui.text(Ui.semibold, 24 * k, 0x99FFFFFF);
         datePaint.setLetterSpacing(0.13f);
+        weatherPaint = Ui.text(Ui.semibold, 27 * k, 0xCCFFFFFF);
         namePaint = Ui.text(Ui.light, 92 * k, 0xFFFFFFFF);
         pillText = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
         sheetTitle = Ui.text(Ui.displaySemibold, 40 * k, 0xFFFFFFFF);
@@ -374,6 +384,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         c.drawBitmap(background, null, screenRect, backgroundPaint);
     }
 
+    @Override public void onData() {
+        invalidate();
+    }
+
     private String greeting() {
         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
         if (hour < 12) return Ui.tr("BOM DIA", "GOOD MORNING");
@@ -400,6 +414,24 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         c.drawLine(dividerX, base - 84 * k, dividerX, base - 6 * k, stroke);
         String date = Ui.date(now).replace(",", "").toUpperCase(Ui.locale());
         c.drawText(date, dividerX + 34 * k, base - 28 * k, datePaint);
+        drawWeather(c, x, base + 58 * k);
+    }
+
+    /** Under the clock: the weather icon, the city, the temperature, what it looks like, and the day's high and low. */
+    private void drawWeather(Canvas c, float x, float base) {
+        HomeData.Weather wx = data.weather;
+        if (Double.isNaN(wx.temp)) return;
+        String city = Prefs.city().trim();
+        String text = (city.isEmpty() ? "" : city + "  ·  ") + HomeData.degrees(wx.temp);
+        String words = HomeData.condition(wx.code, wx.isDay);
+        if (!words.isEmpty()) text += "  " + words;
+        if (!Double.isNaN(wx.max) && !Double.isNaN(wx.min)) {
+            text += "  ·  " + (Ui.en ? "H:" : Ui.fr ? "Max " : "Máx. ") + HomeData.degrees(wx.max)
+                    + (Ui.en ? "  L:" : Ui.fr ? "  Min " : "  Mín. ") + HomeData.degrees(wx.min);
+        }
+        float icon = 36 * k;
+        Symbols.draw(getContext(), c, Symbols.weather(wx.code, wx.isDay), x + icon / 2, base - 9 * k, icon, 0xE6FFFFFF);
+        c.drawText(text, x + icon + 16 * k, base, weatherPaint);
     }
 
     private void drawPills(Canvas c) {
