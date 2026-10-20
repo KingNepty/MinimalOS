@@ -210,6 +210,7 @@ final class French {
         T.put("GOOD AFTERNOON", "BON APRÈS-MIDI");
         T.put("GOOD EVENING", "BONSOIR");
         T.put("Home Style", "Style d'accueil");
+        T.put("Shelf Size", "Applis sur l'étagère");
         T.put("No inputs found.", "Aucune entrée trouvée.");
     }
 

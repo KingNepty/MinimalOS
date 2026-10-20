@@ -373,8 +373,11 @@ public class SettingsActivity extends Activity {
                     language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
                     Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
                     units.value = unitsName(oneOf(Prefs.temperature(), UNITS));
+                    Row size = new Row(Ui.tr("Apps na prateleira", "Shelf Size"), "shelf");
+                    size.value = String.valueOf(Prefs.shelfSize());
                     rows.add(city);
                     rows.add(style);
+                    rows.add(size);
                     rows.add(language);
                     rows.add(units);
                     break;
@@ -637,7 +640,7 @@ public class SettingsActivity extends Activity {
         }
 
         private static String maxText() {
-            return Ui.fr ? HomeApps.MAX_SHELF + " applis au maximum." : Ui.tr("No máximo " + HomeApps.MAX_SHELF + " apps.", "Up to " + HomeApps.MAX_SHELF + " apps.");
+            return Ui.fr ? HomeApps.maxShelf() + " applis au maximum." : Ui.tr("No máximo " + HomeApps.maxShelf() + " apps.", "Up to " + HomeApps.maxShelf() + " apps.");
         }
 
         /** First-time Fire TV setup: what to type on a computer. This screen goes on by itself when the service is on. */
@@ -831,6 +834,11 @@ public class SettingsActivity extends Activity {
             String tag = rows.get(focus).tag;
             if (tag.equals("style")) {
                 Prefs.put("homeStyle", Prefs.homeStyle().equals("foryou") ? "apps" : "foryou");
+            } else if (tag.equals("shelf")) {
+                int n = Prefs.shelfSize() + by;
+                if (n > Prefs.SHELF_MAX) n = Prefs.SHELF_MIN;
+                if (n < Prefs.SHELF_MIN) n = Prefs.SHELF_MAX;
+                Prefs.put("shelfSize", String.valueOf(n));
             } else if (tag.equals("lang")) {
                 String next = next(LANGUAGES, oneOf(Prefs.language(), LANGUAGES), by);
                 Prefs.put("language", next);
@@ -868,7 +876,7 @@ public class SettingsActivity extends Activity {
                 }
                 picked.remove(tag);
             } else {
-                if (picked.size() >= HomeApps.MAX_SHELF) {
+                if (picked.size() >= HomeApps.maxShelf()) {
                     say(maxText());
                     return;
                 }

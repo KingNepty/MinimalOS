@@ -75,7 +75,7 @@ final class HomeApps {
     }
 
     /**
-     * Apps on the home shelf, in this order, when installed (up to MAX_SHELF): key, name, package, brand color (for
+     * Apps on the home shelf, in this order, when installed (up to maxShelf()): key, name, package, brand color (for
      * its logo on glass) and how to lift the logo from the app's TV art: "tint" = a white logo takes the art's
      * background color (Prime Video, Globoplay); "play" = the white triangle inside the red button stays white
      * (YouTube); empty = the art's colors as they are. Last, a visual size tweak for the logo. Edit freely.
@@ -93,7 +93,8 @@ final class HomeApps {
         {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
-    static final int MAX_SHELF = 8;
+    /** The shelf holds this many apps (Settings → Preferences → Shelf Size, 8 by default). */
+    static int maxShelf() { return Prefs.shelfSize(); }
     /** Live TV apps of some brands (the antenna's channels open through the standard Android request first). */
     static final String[] LIVE_TV_APPS = {"com.tcl.tv", "com.google.android.tv", "com.mediatek.wwtv.tvcenter", "com.sony.dtv.tvx"};
     /** Kept out of "All Apps" (only hidden, still installed). Add the ones your TV shows that you never use. */
@@ -172,7 +173,7 @@ final class HomeApps {
         e.apply();
     }
 
-    /** The packages on the shelf now, in order: the pick, or the default list; only installed ones, up to MAX_SHELF. */
+    /** The packages on the shelf now, in order: the pick, or the default list; only installed ones, up to maxShelf(). */
     static List<String> shelfPackages(Context c) {
         PackageManager pm = c.getPackageManager();
         List<String> wanted = shelfChoice(c);
@@ -181,8 +182,9 @@ final class HomeApps {
             for (String[] d : SHELF) wanted.add(d[2]);
         }
         List<String> out = new ArrayList<>();
+        int max = maxShelf();
         for (String pkg : wanted) {
-            if (out.size() >= MAX_SHELF) break;
+            if (out.size() >= max) break;
             if (!out.contains(pkg) && launchIntent(pm, pkg) != null) out.add(pkg);
         }
         return out;

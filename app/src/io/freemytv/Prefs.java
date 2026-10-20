@@ -31,6 +31,17 @@ final class Prefs {
     /** "apps" (the app grid on a color glow) or "foryou" (picks and cards). */
     static String homeStyle() { return get("homeStyle", "apps"); }
 
+    static final int SHELF_MIN = 4, SHELF_MAX = 12, SHELF_DEFAULT = 8;
+
+    /** How many apps the shelf holds (Settings → Preferences). */
+    static int shelfSize() {
+        try {
+            return Math.max(SHELF_MIN, Math.min(SHELF_MAX, Integer.parseInt(get("shelfSize", String.valueOf(SHELF_DEFAULT)))));
+        } catch (NumberFormatException e) {
+            return SHELF_DEFAULT;
+        }
+    }
+
     static void put(String key, String value) {
         SharedPreferences p = sp;
         if (p != null) p.edit().putString(key, value).apply();

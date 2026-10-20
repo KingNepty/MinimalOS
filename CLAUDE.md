@@ -61,7 +61,8 @@ Then, in the code:
 
 **Fire TV (Fire OS, Android 11+):** Amazon's launcher can't be replaced or turned off (`set-home-activity` is ignored,
 `pm disable` says "protected package"), and its ADB hangs up on connections from the TV itself, so the app can't switch
-itself with ADB there. Free My TV mode is the accessibility service `HomeKeyService`, which opens our home screen when
+itself with ADB there. `tools/fire-debloat.sh <IP> off|on` turns Amazon's shopping, promo, tutorial and usage-collection
+apps off and back on (`pm disable-user`, never uninstall; from the computer). Free My TV mode is the accessibility service `HomeKeyService`, which opens our home screen when
 Amazon's comes up. Turn it on once from the computer (it persists across reboots):
 `adb shell settings put secure enabled_accessibility_services io.freemytv/io.freemytv.HomeKeyService`
 (if other services are already listed, append with `:`). *Original* in the app turns it off (`disableSelf`). Nothing of
