@@ -555,9 +555,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
         boolean tiltMoving = tiltX.step(dt) | tiltY.step(dt);
-        tilesMoving |= tiltMoving;
+        // The tilt only changes the layer that holds the focused element (the shelf's, or the cards').
+        tilesMoving |= tiltMoving && zone == Z_SHELF;
         if (topMoving) status.invalidate();
-        heroMoving |= topMoving | cardsMoving | tiltMoving;
+        heroMoving |= topMoving | cardsMoving | (tiltMoving && zone == Z_CARDS);
         boolean drawerItemsMoving = step(drawerFocus, dt);
         boolean gridMoving = step(gridFocus, dt) | scroll.step(dt);
         boolean drawerMoving = drawer.step(dt);
@@ -1808,8 +1809,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - Tilt: the focused icon or card leans toward where the focus came from and settles back (tvOS parallax)
 
-    private final Spring tiltX = new Spring(0.5f, 0.45f, 0), tiltY = new Spring(0.5f, 0.45f, 0);
-    private final android.graphics.Camera camera = new android.graphics.Camera();
+    private final Spring tiltX = new Spring(0.34f, 0.62f, 0), tiltY = new Spring(0.34f, 0.62f, 0);
     private final Matrix tiltMatrix = new Matrix();
 
     private void kick(int dx, int dy) {
@@ -1820,17 +1820,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tiltY.target = tiltX.target = 0;
     }
 
-    /** Rotates the canvas in 3D around (cx, cy) by the tilt springs; true if it did (then c.restore() when done). */
+    /**
+     * Leans the canvas around (cx, cy) by the tilt springs; true if it did (then c.restore() when done). A skew and a
+     * slight squeeze instead of a real 3D rotation: for these small angles it looks the same, and it keeps the GPU on
+     * its fast path (a perspective matrix made every frame cost twice as much on this TV).
+     */
     private boolean tilt(Canvas c, float cx, float cy, float amount) {
         float ry = tiltY.value * amount, rx = tiltX.value * amount;
         if (Math.abs(ry) < 0.05f && Math.abs(rx) < 0.05f) return false;
-        camera.save();
-        camera.rotateY(ry);
-        camera.rotateX(rx);
-        camera.getMatrix(tiltMatrix);
-        camera.restore();
-        tiltMatrix.preTranslate(-cx, -cy);
-        tiltMatrix.postTranslate(cx, cy);
+        tiltMatrix.setSkew(-rx * 0.004f, ry * 0.004f, cx, cy);
+        tiltMatrix.postScale(1 - 0.0016f * Math.abs(ry), 1 - 0.0016f * Math.abs(rx), cx, cy);
         c.save();
         c.concat(tiltMatrix);
         return true;
