@@ -98,6 +98,34 @@ final class Backdrop {
         return new Backdrop(gpu(out), frost, glass, null, null, null, null, null, null);
     }
 
+    /**
+     * A background of one color (an app with no photo, the app spotlight): the same frosted, glass, day and night
+     * versions as a photo's, made straight from a vertical gradient at their own small sizes (a few ms; no full-size
+     * image, no card crops).
+     */
+    static Backdrop tint(int top, int bottom) {
+        int[] frost = gradient(FW, FH, top, bottom);
+        int[] glass = gradient(GW, GH, top, bottom);
+        int[] light = whiten(frost.clone(), 0.82f);
+        int[] lightGlass = whiten(glass.clone(), 0.74f);
+        int[] night = darken(frost.clone(), 0.76f);
+        int[] nightGlass = darken(glass, 0.56f);
+        return new Backdrop(null, frost, null, null, null, light, lightGlass, night, nightGlass);
+    }
+
+    private static int[] gradient(int w, int h, int top, int bottom) {
+        int[] px = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            float f = h <= 1 ? 0 : (float) y / (h - 1);
+            int r = Math.round(((top >> 16) & 255) * (1 - f) + ((bottom >> 16) & 255) * f);
+            int g = Math.round(((top >> 8) & 255) * (1 - f) + ((bottom >> 8) & 255) * f);
+            int b = Math.round((top & 255) * (1 - f) + (bottom & 255) * f);
+            int c = 0xFF000000 | (r << 16) | (g << 8) | b;
+            for (int x = 0; x < w; x++) px[y * w + x] = c;
+        }
+        return px;
+    }
+
     /** How many times smaller the screensaver photo's frosted version is (the glass math uses the same number). */
     static final int PHOTO_FROST = 6;
 

@@ -198,12 +198,13 @@ final class Recs {
         return three(list);
     }
 
-    private volatile String focusPkg = "", focusKey = "";
+    private volatile String focusPkg = "", focusKey = "", focusKind;
 
-    /** The shelf app in focus (Top Shelf): its picks are wanted too, so their details and images get loaded. */
-    void wantApp(String pkg, String key) {
+    /** The shelf app in focus (Top Shelf) and the tab's kind: its picks are wanted too, so their details and images get loaded. */
+    void wantApp(String pkg, String key, String kind) {
         focusPkg = pkg == null ? "" : pkg;
         focusKey = key == null ? "" : key;
+        focusKind = kind;
         if (!focusPkg.isEmpty()) refreshIfStale();
     }
 
@@ -393,8 +394,8 @@ final class Recs {
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (String kind : new String[] {null, "movie", "tv"}) {
             for (Pick p : now(kind)) if (seen.add(key(p))) out.add(p);
-            if (!focusPkg.isEmpty()) for (Pick p : forApp(focusPkg, focusKey, kind)) if (seen.add(key(p))) out.add(p);
         }
+        if (!focusPkg.isEmpty()) for (Pick p : forApp(focusPkg, focusKey, focusKind)) if (seen.add(key(p))) out.add(p);
         return out;
     }
 
@@ -772,7 +773,7 @@ final class Recs {
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
                 images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? 18 : 4)) images.remove(images.keySet().iterator().next());
+                while (images.size() > (forLight ? 14 : 4)) images.remove(images.keySet().iterator().next());
             }
             notifyListeners();
         } catch (IOException | RuntimeException | OutOfMemoryError e) {

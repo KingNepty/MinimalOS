@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
@@ -62,8 +63,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Shelf: tiles with corners concentric with the glass (glass radius = tile radius + padding).
     // Shelf like the tvOS 27 Dock: 5:3 icons (210 × 126) in each brand's color, 48 apart, and the glass bar hugging
     // them with 40 of padding (the focused icon grows 20% without touching its edge).
-    private static final float SHELF_PAD = 40, TILE_GAP = 48;
-    private static final float TILE_RADIUS = 22, TILE_MAX_W = 270;
+    private static final float SHELF_PAD = 36, TILE_GAP = 36;
+    private static final float TILE_RADIUS = 26;
     // Tile focus (Apple TV style): it grows from the center and its shadow drops (it "rises" toward the viewer).
     private static final float FOCUS_GROW = 0.2f;
     // Corner capsule.
@@ -84,7 +85,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // The tab bar is a 68 px capsule; the cards sit on the 5-column grid (the wide one spans 3).
     private static final float L_TITLE_BASE = 130, L_TABBAR_TOP = 158, L_TABBAR_H = 68, L_CARDS_TOP = 262, L_CARD_H = 442;
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
-    private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
+    private static final float L_PLATTER_TOP = 832, L_TILE_H = 112;
     private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
     private static final String[] TABS = {"Explorar", "Filmes", "Séries"};
     private static final String[] TABS_EN = {"Explore", "Movies", "Shows"};
@@ -288,6 +289,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         tvInputs = (TvInputManager) a.getSystemService(Context.TV_INPUT_SERVICE);
         setFocusable(true);
         sky = new Layer(a, SKY);
+        veilLayer = new View(a);
+        veilLayer.setVisibility(INVISIBLE);
         heroLayer = new Layer(a, HERO);
         status = new Layer(a, STATUS);
         platter = new Layer(a, PLATTER);
@@ -297,7 +300,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         toastLayer = new Layer(a, TOAST);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(LAYER_TYPE_HARDWARE, null);
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) addView(v);
+        for (View v : new View[] {sky, veilLayer, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) addView(v);
         drawerLayer.setVisibility(INVISIBLE);
         for (int i = 0; i < 7; i++) {
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
@@ -366,7 +369,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(topShelfTask);
         if (topApp != null) {
             topApp = null;
-            recs.wantApp(null, null);
+            recs.wantApp(null, null, null);
         }
         zone = Z_SHELF;
         shelfIndex = 0;
@@ -424,6 +427,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int width = MeasureSpec.getSize(widthSpec), height = MeasureSpec.getSize(heightSpec);
         float kk = width / 1920f;
         measure(sky, width, height);
+        measure(veilLayer, width, height);
         measure(heroLayer, width, Math.round(790 * kk));
         measure(status, Math.round(1160 * kk), Math.round(240 * kk));
         // Sized to what they draw (the glass and its shadow; the grown tiles and their shadows): smaller layers are
@@ -444,6 +448,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int width = r - l, height = b - t;
         float kk = width / 1920f;
         sky.layout(0, 0, width, height);
+        veilLayer.layout(0, 0, width, height);
         place(heroLayer, 0, 0);
         place(status, width - status.getMeasuredWidth(), 0);
         place(platter, 0, Math.round(750 * kk));
@@ -578,7 +583,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (heroMoving || heroDirty || heroFading) heroLayer.invalidate();
         if (drawerItemsMoving || drawerDirty || bgFading) drawerLayer.invalidate();
         if (gridMoving || gridDirty) sheetLayer.invalidate();
-        if (drawerMoving || bgFading) sky.invalidate();
+        if (bgFading) sky.invalidate();
         if (bgFading || (drawerWasMoving && !drawerMoving)) platter.invalidate();
         drawerWasMoving = drawerMoving;
         tilesDirty = statusDirty = heroDirty = drawerDirty = gridDirty = motionDirty = false;
@@ -605,8 +610,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** Drawer and sheet: the layers' positions and opacity (without redrawing their content). */
+    private final View veilLayer;
+    private int veilShown;
+
     private void updateMotion() {
         float d = drawer.value, dc = Ui.clamp(d), s = Ui.clamp(sheet.value);
+        // Drawer open: the background lightens (by day) or darkens (at night). A flat layer whose opacity moves, which
+        // the GPU only composites; redrawing the whole photo through a color filter on every frame cost ~40 ms here.
+        float veil = tone(0.32f, 0.42f) * dc;
+        int veilColor = blend(0xFFFFFFFF, 0xFF000000, night);
+        if (veilColor != veilShown) {
+            veilLayer.setBackgroundColor(veilColor);
+            veilShown = veilColor;
+        }
+        veilLayer.setAlpha(veil);
+        veilLayer.setVisibility(veil > 0.002f ? VISIBLE : INVISIBLE);
         float home = 1 - s, top = home * (1 - smoothstep(0, 0.32f, dc));
         float shift = SHIFT * k;
         float lift = -d * shift;
@@ -668,7 +686,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         HomeApps.Item want = wantedTopApp();
         if (want == topApp) return;
         topApp = want;
-        recs.wantApp(want == null ? null : want.pkg, want == null ? null : want.key);
+        recs.wantApp(want == null ? null : want.pkg, want == null ? null : want.key, TAB_KIND[tab]);
         updateCards();
     }
 
@@ -1037,7 +1055,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int n = shelf.size();
         float pad = SHELF_PAD * k, gap = TILE_GAP * k, th = L_TILE_H * k;
         float full = (CONTENT_R - MARGIN) * k;
-        float tw = Math.min(TILE_MAX_W * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
+        // 16:9 icons, like the TV home screens; fewer apps never make them wider.
+        float tw = Math.min(th * 16f / 9f, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
         float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
         float top = L_PLATTER_TOP * k;
         platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
@@ -2011,12 +2030,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Backdrop b = appBackdrops.get(p.id);
         if (b != null) return b;
         // The app's color, a vertical gradient: it goes through the same frosting as a photo (pale by day, dark at night).
-        Bitmap bmp = Bitmap.createBitmap(Backdrop.W, Backdrop.H, Bitmap.Config.ARGB_8888);
-        Canvas cv = new Canvas(bmp);
-        Paint pt = new Paint();
-        pt.setShader(new LinearGradient(0, 0, 0, Backdrop.H, p.brand, blend(p.brand, 0xFF000000, 0.5f), Shader.TileMode.CLAMP));
-        cv.drawRect(0, 0, Backdrop.W, Backdrop.H, pt);
-        b = Backdrop.make(bmp, true);
+        b = Backdrop.tint(p.brand, blend(p.brand, 0xFF000000, 0.5f));
         while (appBackdrops.size() >= 6) appBackdrops.remove(appBackdrops.keySet().iterator().next());
         appBackdrops.put(p.id, b);
         return b;
@@ -2115,9 +2129,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** An app's card: its art on its colors (the logo on the shelf icon's gradient, or the TV banner centered). */
-    private void drawAppCard(Canvas c, Recs.Pick p, boolean wide) {
+    private void drawAppCard(Canvas c, Recs.Pick p, float radius) {
         fill.setShader(new LinearGradient(0, cell.top, 0, cell.bottom, p.fill0, p.fill1, Shader.TileMode.CLAMP));
-        c.drawRect(cell, fill);
+        c.drawRoundRect(cell, radius, radius, fill);
         fill.setShader(null);
         if (p.art == null) return;
         float aw = p.art.getWidth(), ah = p.art.getHeight();
@@ -2143,8 +2157,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         long up = SystemClock.uptimeMillis();
         float e = bgFadeAt == 0 ? 1 : fadeEase(bgFadeAt, up);
         boolean fading = bgFadeAt != 0;
-        // Drawer open: the background lightens (by day) or darkens (at night), as a filter on the drawing itself.
-        android.graphics.ColorFilter v = veil(tone(0.32f, 0.42f) * Ui.clamp(drawer.value), blend(0xFFFFFFFF, 0xFF000000, night));
+        android.graphics.ColorFilter v = null;   // (the drawer's veil is its own layer: veilLayer)
         if (bgTo == null || (fading && bgFrom == null)) {
             if (lightGradient == null) lightGradient = new LinearGradient(0, 0, 0, h, 0xFFF5F5F7, 0xFFE2E2E7, Shader.TileMode.CLAMP);
             if (nightGradient == null) nightGradient = new LinearGradient(0, 0, 0, h, 0xFF1C1C1E, 0xFF0B0B0D, Shader.TileMode.CLAMP);
@@ -2208,6 +2221,37 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawQuotes(c);
     }
 
+    // Cards cost the GPU a lot here (measured: a live blur shadow, a rounded clip and the gradient highlights each pushed
+    // the frame past 16 ms). So: the shadow is blurred once into a small image, the picture is drawn through the rounded
+    // rectangle itself (a bitmap shader, no clip) and there is one highlight pass.
+    private static final float SHADOW_PAD = 80;
+    private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint shadowBitmapPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Matrix cardMatrix = new Matrix();
+    private final RectF srcRect = new RectF(), shadowRect = new RectF();
+    private final BitmapShader[] cardShader = new BitmapShader[3];
+    private final Bitmap[] cardShaderBitmap = new Bitmap[3];
+    private Bitmap shadowWide, shadowTall;
+    private float shadowFor;
+
+    /** The card's soft shadow at its resting size, blurred once (a live blur on every frame cost ~8 ms here). */
+    private Bitmap cardShadow(boolean wide, float bw, float bh) {
+        if (shadowFor != k) {
+            shadowWide = shadowTall = null;
+            shadowFor = k;
+        }
+        Bitmap have = wide ? shadowWide : shadowTall;
+        if (have != null) return have;
+        float pad = SHADOW_PAD * k;
+        Bitmap bmp = Bitmap.createBitmap(Math.round(bw + 2 * pad), Math.round(bh + 2 * pad), Bitmap.Config.ARGB_8888);
+        Paint blur = new Paint(Paint.ANTI_ALIAS_FLAG);
+        blur.setColor(0xFF000000);
+        blur.setMaskFilter(new BlurMaskFilter(30 * k, BlurMaskFilter.Blur.NORMAL));
+        new Canvas(bmp).drawRoundRect(pad, pad, pad + bw, pad + bh, 18 * k, 18 * k, blur);
+        if (wide) shadowWide = bmp; else shadowTall = bmp;
+        return bmp;
+    }
+
     /**
      * Recommendation card: the title's photo (already at the focused card size, so it stays sharp), rounded corners and
      * a soft shadow; when focused, it grows 5%, rises and lights up its border. Below it, the title (and on the large
@@ -2222,41 +2266,42 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
         boolean tilted = f > 0.05f && tilt(c, cx, cy, f);
+        // Shadow: the pre-blurred image, grown with the card, lower and darker when focused.
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
-        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-        tmp.offset(0, (10 + 14 * f) * k);
-        shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.32f) + tone(0.2f, 0.28f) * f));
-        c.drawRoundRect(tmp, r0, r0, shadowDeep);
+        float pad = SHADOW_PAD * k, off = (10 + 14 * f) * k;
+        shadowRect.set(-bw / 2 - pad, -bh / 2 - pad + off, bw / 2 + pad, bh / 2 + pad + off);
+        shadowBitmapPaint.setAlpha(Math.round(255 * Math.min(1, tone(0.14f, 0.32f) + tone(0.2f, 0.28f) * f)));
+        c.drawBitmap(cardShadow(i == 0, bw, bh), null, shadowRect, shadowBitmapPaint);
         c.restore();
-        clip.reset();
-        clip.addRoundRect(cell, r, r, Path.Direction.CW);
-        c.save();
-        c.clipPath(clip);
+        // The picture through the rounded rectangle (no clip).
         Backdrop b = p == null || p.art != null ? null : recs.backdrop(p);
         Bitmap img = b == null ? null : (i == 0 ? b.wide : b.tall);
         if (img != null) {
-            c.drawBitmap(img, null, cell, bitmapPaint);
+            if (cardShaderBitmap[i] != img) {
+                cardShader[i] = new BitmapShader(img, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+                cardShaderBitmap[i] = img;
+            }
+            srcRect.set(0, 0, img.getWidth(), img.getHeight());
+            cardMatrix.setRectToRect(srcRect, cell, Matrix.ScaleToFit.FILL);
+            cardShader[i].setLocalMatrix(cardMatrix);
+            cardPaint.setShader(cardShader[i]);
+            c.drawRoundRect(cell, r, r, cardPaint);
+            cardPaint.setShader(null);
         } else if (p != null && p.art != null) {
-            drawAppCard(c, p, i == 0);
+            drawAppCard(c, p, r);
         } else {
             fill.setShader(null);
             fill.setColor(tone(0xFFDADADF, 0xFF2C2C2E));
-            c.drawRect(cell, fill);
+            c.drawRoundRect(cell, r, r, fill);
         }
-        if (f > 0.01f) {
-            sheen.setShader(new LinearGradient(cell.left, cell.top, cell.left + cell.width() * 0.5f, cell.bottom,
-                    Ui.alpha(0xFFFFFFFF, 0.22f * f), 0x00FFFFFF, Shader.TileMode.CLAMP));
-            c.drawRect(cell, sheen);
-        }
-        c.restore();
         if (f > 0.01f) {
             rim.setShader(new LinearGradient(0, cell.top, 0, cell.bottom,
                     Ui.alpha(0xFFFFFFFF, 0.9f * f), Ui.alpha(0xFFFFFFFF, 0.35f * f), Shader.TileMode.CLAMP));
             c.drawRoundRect(cell, r, r, rim);
         }
-        if (f > 0.05f) specular(c, cell, r, f * 0.8f);
+        if (f > 0.05f) specular(c, cell, r, f);
         if (tilted) c.restore();
         if (p == null) return;
         TextPaint tp = new TextPaint(lCardTitle);
