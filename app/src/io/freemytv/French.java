@@ -211,6 +211,7 @@ final class French {
         T.put("GOOD EVENING", "BONSOIR");
         T.put("Home Style", "Style d'accueil");
         T.put("ALL APPS", "TOUTES LES APPLIS");
+        T.put("All Apps", "Toutes les applis");
         T.put("Shelf Size", "Applis par ligne");
         T.put("No inputs found.", "Aucune entrée trouvée.");
     }

@@ -42,26 +42,58 @@ import java.util.concurrent.Executors;
 final class AppsHome extends View implements Choreographer.FrameCallback {
     // Layout, in a 1920 × 1080 space (scaled by k).
     private static final float MARGIN = 120, GRID_W = 1632;
-    private static final float PANEL_TOP = 692, PANEL_H = 270, PANEL_PAD = 40;
+    private static final float PANEL_TOP = 692, PANEL_PAD = 40, PANEL_PAD_V = 34, HEADER_H = 64, SCROLL_UNIT = 100;
     // The grid's geometry follows Settings → Preferences → Shelf Size (apps per row, 6 by default): the grid keeps its
     // width and the 16:9 tiles shrink to fit.
     private int COLS = 6;
-    private float TILE_W = 183, TILE_H = 103, GAP_X = 24, ROW_PITCH = 211, TILE_Y0 = 775, TILE_R = 14;
+    private float TILE_W = 235, TILE_H = 132, GAP_X = 34, ROW_PITCH = 168, TILE_R = 17;
 
     private void layoutGrid() {
         COLS = Prefs.shelfSize();
         GAP_X = Math.max(20, 64 - (COLS - 4) * 10);
         TILE_W = (GRID_W - (COLS - 1) * GAP_X) / COLS;
         TILE_H = TILE_W * 9 / 16;
-        ROW_PITCH = TILE_H + 108;
-        TILE_Y0 = PANEL_TOP + (PANEL_H - TILE_H) / 2;
+        ROW_PITCH = TILE_H + 36;
         TILE_R = Math.max(12, 26 * TILE_H / 202);
         tileShadow = null;
         shaders = new BitmapShader[apps.size()];
+        open = Prefs.allAppsOpen();
+        metrics();
+    }
+
+    // The favorites sit in a bordered panel of their own, which never holds anything else. Under it, "All apps" is a
+    // header you can open or close (OK) and a plain grid with no border. All of it scrolls together; positions below are
+    // in a column that starts at the panel's top (PANEL_TOP on the screen when it isn't scrolled).
+    private boolean open = true;
+    private int favRows;
+    private float panelH, headerTop, othersTop;
+
+    private void metrics() {
+        favRows = (fav + COLS - 1) / COLS;
+        panelH = favRows == 0 ? 0 : 2 * PANEL_PAD_V + (favRows - 1) * ROW_PITCH + TILE_H;
+        headerTop = favRows == 0 ? 0 : panelH + 40;
+        othersTop = headerTop + HEADER_H + 22;
+    }
+
+    private float tileTop(int i) {
+        return i < fav ? PANEL_PAD_V + rowOf(i) * ROW_PITCH : othersTop + (rowOf(i) - favRows) * ROW_PITCH;
+    }
+
+    /** Where the column scrolls to (in SCROLL_UNITs) for what is focused. */
+    private float scrollFor() {
+        float px = 0;
+        if (zone == HEADER) px = headerTop - 30;
+        else if (zone == GRID && index < apps.size() && index >= fav) px = tileTop(index) - 60;
+        return Math.max(0, px) / SCROLL_UNIT;
+    }
+
+    /** Things scrolling up under the app's name fade out. */
+    private static float fadeTop(float screenY) {
+        return Ui.clamp((screenY - 650) / 50f);
     }
     private static final float PILL_H = 72, PILL_CY = 104, PILL_GAP = 16, PILL_PAD = 26;
     private static final float SHADOW_PAD = 70;
-    private static final int GRID = 0, PILLS = 1;
+    private static final int GRID = 0, PILLS = 1, HEADER = 2;
     private static final int INK = 0xFF1C1C1E, DARK = 0xFF060608;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
 
@@ -205,6 +237,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         String keep = index < apps.size() ? apps.get(index).pkg : null;
         apps = list;
         fav = favorites;
+        metrics();
         brand = colors;
         inputs = in;
         pop = new Spring[list.size()];
@@ -212,9 +245,11 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.34f, 0.74f, 0);
         int at = 0;
         for (int i = 0; i < list.size() && keep != null; i++) if (keep.equals(list.get(i).pkg)) at = i;
+        if (!open && at >= fav) at = 0;
         index = Math.min(at, Math.max(0, list.size() - 1));
-        scrollRow.snap(rowOf(index));
+        if (zone == HEADER && fav >= list.size()) zone = GRID;
         focusChanged(true);
+        scrollRow.snap(scrollRow.target);
         invalidate();
     }
 
@@ -390,7 +425,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         if (index >= apps.size()) return;
         float f = Ui.clamp(nameIn.value);
         namePaint.setAlpha(Math.round(255 * f));
-        String name = apps.get(index).label;
+        String name = zone == HEADER ? Ui.tr("Todos os apps", "All Apps") : apps.get(index).label;
         float x = (MARGIN + 18) * k;
         c.drawText(TextUtils.ellipsize(name, new android.text.TextPaint(namePaint), 1500 * k, TextUtils.TruncateAt.END).toString(),
                 x - Ui.leftBearing(namePaint, name), (612 + 16 * (1 - f)) * k, namePaint);
@@ -427,45 +462,72 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
     }
 
     private void tileRect(int i, float rowScroll, RectF out) {
-        int row = rowOf(i), col = colOf(i);
-        float x = gridLeft() + col * (TILE_W + GAP_X) * k;
-        float y = (TILE_Y0 + (row - rowScroll) * ROW_PITCH) * k;
+        float x = gridLeft() + colOf(i) * (TILE_W + GAP_X) * k;
+        float y = (PANEL_TOP + tileTop(i) - rowScroll * SCROLL_UNIT) * k;
         out.set(x, y, x + TILE_W * k, y + TILE_H * k);
     }
 
+    private int shown() {
+        return open ? apps.size() : Math.min(fav, apps.size());
+    }
+
     private void drawGrid(Canvas c) {
-        float left = gridLeft() - PANEL_PAD * k, right = gridLeft() + (COLS * TILE_W + (COLS - 1) * GAP_X) * k + PANEL_PAD * k;
-        panel.set(left, PANEL_TOP * k, right, (PANEL_TOP + PANEL_H) * k);
-        fill.setColor(0x0FFFFFFF);
-        c.drawRoundRect(panel, 46 * k, 46 * k, fill);
-        stroke.setColor(0x24FFFFFF);
-        c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
         if (apps.isEmpty()) return;
         float rowScroll = scrollRow.value;
-        drawGroupLabel(c, rowScroll);
+        float shift = rowScroll * SCROLL_UNIT;
+        if (fav > 0) {
+            float left = gridLeft() - PANEL_PAD * k, right = gridLeft() + (COLS * TILE_W + (COLS - 1) * GAP_X) * k + PANEL_PAD * k;
+            float top = PANEL_TOP - shift, a = fadeTop(top + panelH - 70);
+            if (a > 0.01f) {
+                panel.set(left, top * k, right, (top + panelH) * k);
+                fill.setColor(Ui.alpha(0x0FFFFFFF, a));
+                c.drawRoundRect(panel, 46 * k, 46 * k, fill);
+                stroke.setColor(Ui.alpha(0x24FFFFFF, a));
+                c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
+            }
+        }
+        if (fav < apps.size()) drawHeader(c, shift);
+        int n = shown();
         for (int pass = 0; pass < 2; pass++) {
-            for (int i = 0; i < apps.size(); i++) {
+            for (int i = 0; i < n; i++) {
                 if ((pass == 1) != (i == index && zone == GRID)) continue;
-                float rowOff = rowOf(i) - rowScroll;
-                if (rowOff < -1f || rowOff > 1.7f) continue;
-                float alpha = rowOff < 0 ? 1 + rowOff : rowOff > 1 ? Math.max(0, 1 - (rowOff - 1) * 1.4f) : 1;
+                float y = PANEL_TOP + tileTop(i) - shift;
+                if (y > 1080) continue;
+                float alpha = fadeTop(y);
                 if (alpha <= 0.01f) continue;
                 drawTile(c, i, rowScroll, alpha);
             }
         }
     }
 
-    /** "All apps" above the first row of the apps that are not favorites. */
-    private void drawGroupLabel(Canvas c, float rowScroll) {
-        if (fav == 0 || fav >= apps.size()) return;
-        float rowOff = rowOf(fav) - rowScroll;
-        if (rowOff < -0.3f || rowOff > 1.7f) return;
-        float alpha = rowOff > 1 ? Math.max(0, 1 - (rowOff - 1) * 1.4f) : rowOff < 0 ? 1 + rowOff / 0.3f : 1;
-        if (alpha <= 0.01f) return;
-        datePaint.setAlpha(Math.round(255 * 0.8f * alpha));
-        float y = (TILE_Y0 + rowOff * ROW_PITCH) * k - 26 * k;
-        c.drawText(Ui.tr("TODOS OS APPS", "ALL APPS"), gridLeft() - Ui.leftBearing(datePaint, "A"), y, datePaint);
+    /** "All apps", with its count and an arrow: OK opens or closes the grid under it. */
+    private void drawHeader(Canvas c, float shift) {
+        float y = PANEL_TOP + headerTop - shift;
+        float a = fadeTop(y);
+        if (a <= 0.01f || y > 1080) return;
+        String label = Ui.tr("TODOS OS APPS", "ALL APPS") + "  ·  " + (apps.size() - fav);
+        float left = gridLeft() - 14 * k, width = datePaint.measureText(label) + 110 * k, top = y * k, bottom = (y + HEADER_H) * k;
+        float f = zone == HEADER ? 1 : 0;
+        tmp.set(left, top, left + width, bottom);
+        if (f > 0) {
+            fill.setColor(Ui.alpha(0x2EFFFFFF, a));
+            c.drawRoundRect(tmp, HEADER_H / 2f * k, HEADER_H / 2f * k, fill);
+            stroke.setColor(Ui.alpha(0xB3FFFFFF, a));
+            c.drawRoundRect(tmp, HEADER_H / 2f * k, HEADER_H / 2f * k, stroke);
+        }
+        datePaint.setAlpha(Math.round(255 * (f > 0 ? 1f : 0.8f) * a));
+        c.drawText(label, left + 28 * k, (top + bottom) / 2 + Ui.halfCap(datePaint), datePaint);
         datePaint.setAlpha(255);
+        // The arrow: down when open, right when closed.
+        float cx = left + width - 40 * k, cy = (top + bottom) / 2, r = 8 * k;
+        stroke.setColor(Ui.alpha(0xFFFFFFFF, a * (f > 0 ? 1f : 0.8f)));
+        if (open) {
+            c.drawLine(cx - r, cy - r / 2, cx, cy + r / 2, stroke);
+            c.drawLine(cx, cy + r / 2, cx + r, cy - r / 2, stroke);
+        } else {
+            c.drawLine(cx - r / 2, cy - r, cx + r / 2, cy, stroke);
+            c.drawLine(cx + r / 2, cy, cx - r / 2, cy + r, stroke);
+        }
     }
 
     private void drawTile(Canvas c, int i, float rowScroll, float alpha) {
@@ -576,7 +638,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         nameIn.value = snapGlow ? 1 : 0;
         nameIn.velocity = 0;
         nameIn.target = 1;
-        scrollRow.target = rowOf(index);
+        scrollRow.target = scrollFor();
     }
 
     boolean onKey(KeyEvent e) {
@@ -661,19 +723,39 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         invalidate();
     }
 
+    private int navCol;
+
     private void move(int dx, int dy) {
-        int n = apps.size();
+        int n = shown();
         if (zone == GRID) {
             int next = index;
             int lo = index < fav ? 0 : fav, hi = index < fav ? fav - 1 : n - 1;
             if (dx != 0) {
                 next = Math.max(lo, Math.min(hi, index + dx));
             } else if (dy > 0) {
-                int t = inRow(rowOf(index) + 1, colOf(index));
-                if (t >= 0) next = t;
+                navCol = colOf(index);
+                // From the last favorites row the next stop is the "All apps" header, not the first app under it.
+                int t = index < fav && rowOf(index) + 1 >= favRows ? -1 : inRow(rowOf(index) + 1, navCol);
+                if (t >= 0 && t < n) {
+                    next = t;
+                } else if (index < fav && fav < apps.size()) {
+                    zone = HEADER;
+                    focusChanged(false);
+                    click.move();
+                    invalidate();
+                    return;
+                }
             } else if (dy < 0) {
+                navCol = colOf(index);
+                if (index >= fav && rowOf(index) == favRows) {
+                    zone = HEADER;
+                    focusChanged(false);
+                    click.move();
+                    invalidate();
+                    return;
+                }
                 if (rowOf(index) > 0) {
-                    next = inRow(rowOf(index) - 1, colOf(index));
+                    next = inRow(rowOf(index) - 1, navCol);
                 } else {
                     zone = PILLS;
                     pillIndex = nearestPill(gridLeft() + colOf(index) * (TILE_W + GAP_X) * k + TILE_W * k / 2);
@@ -685,6 +767,22 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
             if (next == index) return;
             index = next;
             focusChanged(false);
+        } else if (zone == HEADER) {
+            if (dy < 0) {
+                if (fav > 0) {
+                    zone = GRID;
+                    index = inRow(favRows - 1, navCol);
+                } else {
+                    zone = PILLS;
+                    pillIndex = 0;
+                }
+            } else if (dy > 0 && open && fav < apps.size()) {
+                zone = GRID;
+                index = inRow(favRows, navCol);
+            } else {
+                return;
+            }
+            focusChanged(false);
         } else {
             if (dx != 0) {
                 int next = Math.max(0, Math.min(pills.size() - 1, pillIndex + dx));
@@ -692,6 +790,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
                 pillIndex = next;
             } else if (dy > 0) {
                 zone = GRID;
+                focusChanged(false);
             } else {
                 return;
             }
@@ -728,6 +827,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
             return;
         }
         if (apps.isEmpty()) return;
+        if (zone == HEADER) {
+            open = !open;
+            Prefs.put("allApps", open ? "1" : "0");
+            invalidate();
+            return;
+        }
         tileRect(index, scrollRow.value, tmp);
         boolean opened = HomeApps.open(activity, apps.get(index), this, Math.round(tmp.left), Math.round(tmp.top),
                 Math.round(tmp.width()), Math.round(tmp.height()));

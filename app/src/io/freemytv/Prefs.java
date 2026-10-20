@@ -42,6 +42,9 @@ final class Prefs {
         }
     }
 
+    /** Whether the "All apps" grid under the favorites is open. */
+    static boolean allAppsOpen() { return get("allApps", "1").equals("1"); }
+
     static void put(String key, String value) {
         SharedPreferences p = sp;
         if (p != null) p.edit().putString(key, value).apply();
