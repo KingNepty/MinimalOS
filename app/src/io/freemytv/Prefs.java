@@ -48,6 +48,15 @@ final class Prefs {
     /** How "All apps" is ordered: "recent" (the last opened first) or "az". */
     static boolean allAppsAz() { return get("allAppsSort", "recent").equals("az"); }
 
+    /** The Apps home's background: "dynamic" (the focused app's color), "static" (one color) or "image". */
+    static String bgMode() {
+        String m = get("bgMode", "dynamic");
+        return m.equals("static") || m.equals("image") ? m : "dynamic";
+    }
+
+    /** The static background's color, as RRGGBB. */
+    static String bgColor() { return get("bgColor", "3A5BD9"); }
+
     static void put(String key, String value) {
         SharedPreferences p = sp;
         if (p != null) p.edit().putString(key, value).apply();

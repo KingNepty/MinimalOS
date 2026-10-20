@@ -213,6 +213,19 @@ final class French {
         T.put("ALL APPS", "TOUTES LES APPLIS");
         T.put("RECENT", "RÉCENTES");
         T.put("All Apps", "Toutes les applis");
+        T.put("Background", "Arrière-plan");
+        T.put("Background Color", "Couleur d'arrière-plan");
+        T.put("Dynamic", "Dynamique");
+        T.put("Color", "Couleur");
+        T.put("Images", "Images");
+        T.put("Blue", "Bleu");
+        T.put("Purple", "Violet");
+        T.put("Red", "Rouge");
+        T.put("Green", "Vert");
+        T.put("Teal", "Turquoise");
+        T.put("Orange", "Orange");
+        T.put("Pink", "Rose");
+        T.put("Graphite", "Graphite");
         T.put("Shelf Size", "Applis par ligne");
         T.put("No inputs found.", "Aucune entrée trouvée.");
     }

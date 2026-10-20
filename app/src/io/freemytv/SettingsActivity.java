@@ -369,6 +369,13 @@ public class SettingsActivity extends Activity {
                     city.chevron = true;
                     Row style = new Row(Ui.tr("Estilo do Início", "Home Style"), "style");
                     style.value = Prefs.homeStyle().equals("foryou") ? Ui.tr("Para você", "For You") : Ui.tr("Apps", "Apps");
+                    Row bg = new Row(Ui.tr("Fundo", "Background"), "bg");
+                    bg.value = bgModeName(Prefs.bgMode());
+                    Row bgColor = null;
+                    if (Prefs.bgMode().equals("static")) {
+                        bgColor = new Row(Ui.tr("Cor do fundo", "Background Color"), "bgcolor");
+                        bgColor.value = bgColorName(Prefs.bgColor());
+                    }
                     Row language = new Row(Ui.tr("Idioma", "Language"), "lang");
                     language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
                     Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
@@ -377,6 +384,8 @@ public class SettingsActivity extends Activity {
                     size.value = String.valueOf(Prefs.shelfSize());
                     rows.add(city);
                     rows.add(style);
+                    rows.add(bg);
+                    if (bgColor != null) rows.add(bgColor);
                     rows.add(size);
                     rows.add(language);
                     rows.add(units);
@@ -834,6 +843,20 @@ public class SettingsActivity extends Activity {
             String tag = rows.get(focus).tag;
             if (tag.equals("style")) {
                 Prefs.put("homeStyle", Prefs.homeStyle().equals("foryou") ? "apps" : "foryou");
+            } else if (tag.equals("bg")) {
+                String mode = next(BG_MODES, oneOf(Prefs.bgMode(), BG_MODES), by);
+                Prefs.put("bgMode", mode);
+                // The Images background reads your photos from Pictures/FreeMyTV: ask for the permission once.
+                if (mode.equals("image") && getContext() instanceof android.app.Activity
+                        && getContext().checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    ((android.app.Activity) getContext()).requestPermissions(
+                            new String[] {android.Manifest.permission.READ_EXTERNAL_STORAGE}, 7);
+                }
+            } else if (tag.equals("bgcolor")) {
+                String[] hex = new String[BG_COLORS.length];
+                for (int i = 0; i < hex.length; i++) hex[i] = BG_COLORS[i][0];
+                Prefs.put("bgColor", next(hex, oneOf(Prefs.bgColor(), hex), by));
             } else if (tag.equals("shelf")) {
                 int n = Prefs.shelfSize() + by;
                 if (n > Prefs.SHELF_MAX) n = Prefs.SHELF_MIN;
@@ -851,6 +874,25 @@ public class SettingsActivity extends Activity {
             }
             buildRows();
             invalidate();
+        }
+
+        private static final String[] BG_MODES = {"dynamic", "static", "image"};
+        // RRGGBB, then the name in Portuguese and in English.
+        private static final String[][] BG_COLORS = {
+            {"3A5BD9", "Azul", "Blue"}, {"7B3FD0", "Roxo", "Purple"}, {"C62828", "Vermelho", "Red"},
+            {"2E9E5B", "Verde", "Green"}, {"1798A8", "Turquesa", "Teal"}, {"E07A1F", "Laranja", "Orange"},
+            {"D6407A", "Rosa", "Pink"}, {"5A5A60", "Grafite", "Graphite"},
+        };
+
+        private static String bgModeName(String mode) {
+            if (mode.equals("static")) return Ui.tr("Cor", "Color");
+            if (mode.equals("image")) return Ui.tr("Imagens", "Images");
+            return Ui.tr("Dinâmico", "Dynamic");
+        }
+
+        private static String bgColorName(String hex) {
+            for (String[] c : BG_COLORS) if (c[0].equalsIgnoreCase(hex)) return Ui.tr(c[1], c[2]);
+            return "#" + hex;
         }
 
         private static String next(String[] options, String current, int by) {

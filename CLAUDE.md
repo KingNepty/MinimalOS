@@ -90,6 +90,9 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
   What the person changes on the TV (Settings → Preferences: city, language, temperature) is kept in `Prefs` and wins over
   the file; the city search brings latitude, longitude, TMDB country and currency along. The shelf, hidden apps and recent
   apps live in `HomeApps` (preferences, no ADB).
+- The Apps home background (Settings → Preferences → Background): dynamic (the focused app's color), one color from a
+  palette, or images: the movie and show art the app already downloaded plus any photos in `Pictures/FreeMyTV` on the TV
+  (needs `adb shell pm grant io.freemytv android.permission.READ_EXTERNAL_STORAGE`; Settings also asks for it).
 - After any change, `./build.sh` must end with `Built FreeMyTV.apk`.
 
 ## Always
