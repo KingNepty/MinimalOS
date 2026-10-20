@@ -28,7 +28,7 @@ Open source. Built with Claude Code. One button to undo.
 
 ## Install
 
-About ten minutes. You need a Google TV or Android TV (Android 12 or newer) and a computer on the same Wi-Fi.
+About ten minutes. You need a Google TV or Android TV (Android 11 or newer; on Fire TV, Free My TV opens when you press Home, through an accessibility service) and a computer on the same Wi-Fi.
 
 ### The easy way: Claude Code
 

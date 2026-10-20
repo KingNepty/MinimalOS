@@ -378,8 +378,11 @@ public class SettingsActivity extends Activity {
                 }
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
-            c.drawText(Ui.tr("A troca leva uns segundos e a tela pisca nas medições.",
-                    "Switching takes a few seconds; the screen blinks while it measures."), LIST_X * k + 30 * k,
+            c.drawText(HomeMode.isFireOs()
+                    ? Ui.tr("No Fire TV, o botão Início abre o Free My TV.",
+                            "On Fire TV, the Home button opens Free My TV.")
+                    : Ui.tr("A troca leva uns segundos e a tela pisca nas medições.",
+                            "Switching takes a few seconds; the screen blinks while it measures."), LIST_X * k + 30 * k,
                     (LIST_TOP + 20 + 2 * (CHOICE_H + ROW_GAP) + 40) * k, hint);
         }
 

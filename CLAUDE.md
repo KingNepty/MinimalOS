@@ -59,6 +59,14 @@ Then, in the code:
 - Build, install, have them switch on the TV, read `adb logcat -s FreeMyTV`, then have them switch back to
   *Original* once and confirm everything returned.
 
+**Fire TV (Fire OS, Android 11+):** Amazon's launcher can't be replaced or turned off (`set-home-activity` is ignored,
+`pm disable` says "protected package"), and its ADB hangs up on connections from the TV itself, so the app can't switch
+itself with ADB there. Free My TV mode is the accessibility service `HomeKeyService`, which opens our home screen when
+Amazon's comes up. Turn it on once from the computer (it persists across reboots):
+`adb shell settings put secure enabled_accessibility_services io.freemytv/io.freemytv.HomeKeyService`
+(if other services are already listed, append with `:`). *Original* in the app turns it off (`disableSelf`). Nothing of
+Amazon's is turned off. Then they open *Free My TV* → *Home Screen* → *Free My TV* to confirm.
+
 TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is a Google TV streamer on HDMI
 (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set Free My TV up on the streamer.
 
@@ -69,7 +77,7 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
 
 ## The code
 
-- Java 8 language level, minSdk 31 (Android 12), targetSdk 33. No Gradle, no libraries: only the Android SDK.
+- Java 8 language level, minSdk 30 (Android 11), targetSdk 33. No Gradle, no libraries: only the Android SDK.
 - The home screen is drawn by hand on one Canvas (`HomeView`); the glass and the sky are AGSL shaders (`Shaders`,
   Android 13+, with a fallback for 12). Keep it at 60 fps: no allocations in `onDraw`, no work on the UI thread.
 - `HomeMode` runs every switch as a background job (`ModeJob`) in the main process; the UI is in the `:home`

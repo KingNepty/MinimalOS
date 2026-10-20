@@ -1,6 +1,7 @@
 package io.freemytv;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.SystemClock;
 
@@ -98,6 +99,64 @@ final class HomeMode {
         ModeJob.schedule(c, ModeJob.VERIFY, null, 0);
     }
 
+
+    // MARK: - Fire OS
+    // Fire OS ignores the home screen setting, Amazon's launcher can't be turned off, and its ADB hangs up on connections
+    // from the TV itself, so there is no ADB here. Free My TV mode is the accessibility service HomeKeyService, which
+    // opens our home screen when Amazon's comes up. It's turned on once from a computer (FIRE_ON), and "Original" turns
+    // it off from the TV (disableSelf). Nothing of Amazon's is turned off.
+
+    static final String FIRE_ON = "adb shell settings put secure enabled_accessibility_services " + HomeKeyService.COMPONENT;
+
+    static boolean isFireOs() {
+        return "Amazon".equalsIgnoreCase(Build.MANUFACTURER);
+    }
+
+    private static void applyFireFree(Context c) {
+        if (!HomeKeyService.running()) {
+            done(c, Ui.tr("Falta ligar uma vez, pelo computador: ", "One-time step, from a computer: ") + FIRE_ON);
+            return;
+        }
+        try {
+            Watchdog.clear(c);
+            JSONObject s = state(c);
+            s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
+                    .put("disabled", new JSONArray());
+            save(c, s);
+            notice(c, Ui.tr("Free My TV ligado: o botão Início abre o Free My TV.",
+                    "Free My TV is on: the Home button opens Free My TV."));
+            done(c, null);
+            HomeKeyService.openHome(c);
+        } catch (Exception e) {
+            AppLog.w(android.util.Log.getStackTraceString(e));
+            done(c, Ui.tr("Não deu para ligar o Free My TV: ", "Couldn't turn on Free My TV: ") + e);
+        }
+    }
+
+    private static void applyFireOriginal(Context c) {
+        try {
+            HomeKeyService.turnOff();
+            JSONObject s = state(c);
+            s.put("mode", ORIGINAL).put("since", System.currentTimeMillis()).put("homeReverted", false)
+                    .put("disabled", new JSONArray());
+            save(c, s);
+            notice(c, Ui.tr("Modo original: o Início da Amazon voltou.", "Original mode: Amazon's home screen is back."));
+            done(c, null);
+            c.startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (Exception e) {
+            AppLog.w(android.util.Log.getStackTraceString(e));
+            done(c, Ui.tr("Não deu para voltar ao original: ", "Couldn't go back to the original: ") + e);
+        }
+    }
+
+    /** After a reboot or an update: the setting that keeps the service on can be lost; say so (the TV can't fix it). */
+    private static void verifyFire(Context app) {
+        if (!HomeKeyService.running()) {
+            notice(app, Ui.tr("O Início do Free My TV está desligado na TV. Pelo computador: ",
+                    "Free My TV's home screen is off on the TV. From a computer: ") + FIRE_ON);
+        }
+    }
+
     // MARK: - Switches (main process, from ModeJob)
 
     static void applyNow(Context c, String mode) {
@@ -107,6 +166,7 @@ final class HomeMode {
     }
 
     private static void applyFree(Context c) {
+        if (isFireOs()) { applyFireFree(c); return; }
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
             // The TV's own home screen and screensaver, recorded once (before ours replace them) so "original" restores
@@ -160,6 +220,7 @@ final class HomeMode {
     }
 
     private static void applyOriginal(Context c) {
+        if (isFireOs()) { applyFireOriginal(c); return; }
         JSONObject s = state(c);
         try (Adb adb = connect(c, s)) {
             busy(c, Ui.tr("Religando os apps…", "Turning the apps back on…"));
@@ -219,6 +280,19 @@ final class HomeMode {
     /** Safety net: our home screen crashed 3 times in a row. Only the home screen goes back; the rest stays. */
     static void revertHomeNow(Context app) {
         synchronized (RUN) {
+            if (isFireOs()) {
+                try {
+                    HomeKeyService.turnOff();
+                    JSONObject s = state(app);
+                    s.put("homeReverted", true);
+                    save(app, s);
+                    notice(app, Ui.tr("O Início do Free My TV caiu 3 vezes seguidas; voltei para o Início da Amazon.",
+                            "Free My TV's home screen crashed 3 times in a row; I switched back to Amazon's."));
+                } catch (Exception e) {
+                    AppLog.w("could not give the home screen back: " + e);
+                }
+                return;
+            }
             try (Adb adb = Adb.connect(app, 10_000, null)) {
                 JSONObject s = state(app);
                 String home = originalHome(s);
@@ -255,6 +329,7 @@ final class HomeMode {
                 save(app, s);
             } catch (JSONException ignored) {}
             if (!FREE.equals(s.optString("mode"))) return;
+            if (isFireOs()) { verifyFire(app); return; }
             List<String> fixed = new ArrayList<>();
             try (Adb adb = Adb.connect(app, 10_000, null)) {
                 Set<String> present = packages(adb, "");
