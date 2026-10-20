@@ -40,10 +40,12 @@ public class HomeKeyService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         instance = this;
+        HomeMode.fireService(this, true);
     }
 
     @Override public boolean onUnbind(Intent intent) {
         if (instance == this) instance = null;
+        HomeMode.fireService(this, false);
         return super.onUnbind(intent);
     }
 

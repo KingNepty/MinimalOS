@@ -108,6 +108,16 @@ final class HomeMode {
 
     static final String FIRE_ON = "adb shell settings put secure enabled_accessibility_services " + HomeKeyService.COMPONENT;
 
+    /** Written by HomeKeyService (main process) when it turns on or off; the settings screen (:home) reads it. */
+    static void fireService(Context c, boolean on) {
+        try {
+            JSONObject s = state(c);
+            if (s.optBoolean("fireService") == on) return;
+            save(c, s.put("fireService", on));
+        } catch (JSONException ignored) {
+        }
+    }
+
     static boolean isFireOs() {
         return "Amazon".equalsIgnoreCase(Build.MANUFACTURER);
     }
@@ -151,6 +161,7 @@ final class HomeMode {
 
     /** After a reboot or an update: the setting that keeps the service on can be lost; say so (the TV can't fix it). */
     private static void verifyFire(Context app) {
+        fireService(app, HomeKeyService.running());
         if (!HomeKeyService.running()) {
             notice(app, Ui.tr("O Início do Free My TV está desligado na TV. Pelo computador: ",
                     "Free My TV's home screen is off on the TV. From a computer: ") + FIRE_ON);

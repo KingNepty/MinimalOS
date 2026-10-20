@@ -31,13 +31,27 @@ import java.util.concurrent.Executors;
 final class HomeData {
     static final String[] COINS = {"BTC", "ETH", "SOL", "USDT"};
     static final String[] COIN_NAMES = {"Bitcoin", "Ethereum", "Solana", "Dollar"};
-    private static final String CURRENCY = Config.CURRENCY.trim().toUpperCase(Locale.ROOT);
+    private static String currency() {
+        return Prefs.currency().trim().toUpperCase(Locale.ROOT);
+    }
+
     /** Binance quotes dollars as USDT. */
-    private static final String QUOTE = CURRENCY.equals("USD") ? "USDT" : CURRENCY;
-    private static final String WEATHER_URL = "https://api.open-meteo.com/v1/forecast?latitude=" + Config.LATITUDE
-            + "&longitude=" + Config.LONGITUDE
-            + "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset"
-            + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=2";
+    private static String quote() {
+        return currency().equals("USD") ? "USDT" : currency();
+    }
+
+    private static String weatherUrl() {
+        return "https://api.open-meteo.com/v1/forecast?latitude=" + Prefs.latitude()
+                + "&longitude=" + Prefs.longitude()
+                + "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset"
+                + "&hourly=temperature_2m,weather_code,is_day&timezone=auto&forecast_days=2";
+    }
+
+    /** The place or the currency changed in Settings: fetch both again the next time the screen asks. */
+    void settingsChanged() {
+        pricesAt = 0;
+        weatherAt = 0;
+    }
     private static final long PRICES_EVERY = 5 * 60_000L, WEATHER_EVERY = 30 * 60_000L;
     private static final Locale PT = new Locale("pt", "BR");
 
@@ -45,7 +59,7 @@ final class HomeData {
 
     /** BTC, ETH and SOL; in Brazilian reais also the dollar (USDT/BRL), which Binance doesn't list for most currencies. */
     static int coinCount() {
-        return CURRENCY.equals("BRL") ? COINS.length : 3;
+        return currency().equals("BRL") ? COINS.length : 3;
     }
 
     static String coinName(int i) {
@@ -54,7 +68,7 @@ final class HomeData {
 
     private static String pricesUrl() {
         StringBuilder symbols = new StringBuilder();
-        for (int i = 0; i < coinCount(); i++) symbols.append(i == 0 ? "" : ",").append("%22").append(COINS[i]).append(QUOTE).append("%22");
+        for (int i = 0; i < coinCount(); i++) symbols.append(i == 0 ? "" : ",").append("%22").append(COINS[i]).append(quote()).append("%22");
         return "https://api.binance.com/api/v3/ticker/24hr?type=MINI&symbols=%5B" + symbols + "%5D";
     }
 
@@ -128,7 +142,7 @@ final class HomeData {
             fetchingWeather = true;
             io.execute(() -> {
                 try {
-                    String body = get(WEATHER_URL);
+                    String body = get(weatherUrl());
                     weather = parseWeather(body);
                     weatherAt = System.currentTimeMillis();
                     cache.edit().putString("weather", body).putLong("weatherAt", weatherAt).apply();
@@ -148,7 +162,7 @@ final class HomeData {
 
     private void parsePrices(String body) throws Exception {
         JSONArray list = new JSONArray(body);
-        String quote = QUOTE;
+        String quote = quote();
         int found = 0;
         for (int i = 0; i < list.length(); i++) {
             JSONObject o = list.getJSONObject(i);
@@ -203,7 +217,7 @@ final class HomeData {
         return f.parse(iso).getTime();
     }
 
-    private static String get(String url) throws IOException {
+    static String get(String url) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(6000);
         c.setReadTimeout(6000);
@@ -303,13 +317,13 @@ final class HomeData {
     }
 
     private static String currencySymbol() {
-        switch (CURRENCY) {
+        switch (currency()) {
             case "USD": return "$";
             case "BRL": return "R$ ";
             case "EUR": return "€";
             case "GBP": return "£";
             case "JPY": return "¥";
-            default: return CURRENCY + " ";
+            default: return currency() + " ";
         }
     }
 
@@ -320,7 +334,7 @@ final class HomeData {
     }
 
     private static boolean fahrenheit() {
-        String unit = Config.TEMPERATURE.trim().toUpperCase(Locale.ROOT);
+        String unit = Prefs.temperature().trim().toUpperCase(Locale.ROOT);
         if (unit.startsWith("F")) return true;
         if (unit.startsWith("C")) return false;
         return "US".equals(Locale.getDefault().getCountry());

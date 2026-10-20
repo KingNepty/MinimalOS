@@ -186,6 +186,50 @@ final class HomeApps {
         return out;
     }
 
+    // MARK: - Hidden apps and recent apps (Settings → Apps, and what you open)
+
+    /** Apps hidden from All Apps in Settings (still installed). */
+    static Set<String> hiddenApps(Context c) {
+        Set<String> out = new HashSet<>();
+        for (String p : c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).getString("hidden", "").split(",")) {
+            if (!p.isEmpty()) out.add(p);
+        }
+        return out;
+    }
+
+    static void setHiddenApps(Context c, Set<String> pkgs) {
+        c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).edit()
+                .putString("hidden", android.text.TextUtils.join(",", pkgs)).apply();
+    }
+
+    /** Apps that can be hidden: the TV apps that aren't on the shelf. */
+    static List<Item> hideCandidates(Context c) {
+        Set<String> onShelf = new HashSet<>(shelfPackages(c));
+        List<Item> out = new ArrayList<>();
+        for (Item it : shelfCandidates(c)) if (!onShelf.contains(it.pkg)) out.add(it);
+        return out;
+    }
+
+    private static final int RECENT_MAX = 12, RECENT_SHOWN = 6;
+
+    /** The last apps opened from the home screen, newest first. */
+    private static List<String> recentApps(Context c) {
+        List<String> out = new ArrayList<>();
+        for (String p : c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).getString("recent", "").split(",")) {
+            if (!p.isEmpty()) out.add(p);
+        }
+        return out;
+    }
+
+    static void recordLaunch(Context c, String pkg) {
+        List<String> list = recentApps(c);
+        list.remove(pkg);
+        list.add(0, pkg);
+        while (list.size() > RECENT_MAX) list.remove(list.size() - 1);
+        c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).edit()
+                .putString("recent", android.text.TextUtils.join(",", list)).apply();
+    }
+
     /** Every TV app that could go on the shelf (name and package only), A to Z. */
     static List<Item> shelfCandidates(Context c) {
         PackageManager pm = c.getPackageManager();
@@ -327,6 +371,7 @@ final class HomeApps {
         skip.addAll(java.util.Arrays.asList(LIVE_TV_APPS));
         skip.add(c.getPackageName());
         skip.addAll(HIDDEN);
+        skip.addAll(hiddenApps(c));
         Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
         List<Item> items = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -342,6 +387,19 @@ final class HomeApps {
             items.add(it);
         }
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
+        // The ones you opened last come first.
+        List<Item> recent = new ArrayList<>();
+        for (String pkg : recentApps(c)) {
+            if (recent.size() >= RECENT_SHOWN) break;
+            for (Item it : items) {
+                if (it.pkg.equals(pkg)) {
+                    recent.add(it);
+                    break;
+                }
+            }
+        }
+        items.removeAll(recent);
+        items.addAll(0, recent);
         items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV", "sparkles"));
         return items;
     }
@@ -354,6 +412,7 @@ final class HomeApps {
 
     /** Opens the item with the system zoom transition growing out of the card (the app starts opening right away). */
     static boolean open(Activity a, Item it, View from, int x, int y, int w, int h) {
+        if (it.kind == APP && it.pkg != null) recordLaunch(a, it.pkg);
         Intent intent;
         switch (it.kind) {
             case APP:

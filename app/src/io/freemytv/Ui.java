@@ -33,6 +33,8 @@ final class Ui {
     private static final RectF OVAL = new RectF();
 
     static synchronized void init(Context c) {
+        Prefs.init(c);
+        applyLanguage();
         if (loaded) return;
         loaded = true;
         AssetManager a = c.getAssets();
@@ -62,12 +64,19 @@ final class Ui {
 
     /** "en", "pt" or "fr" in config.properties, or "auto": the TV's language if it's Portuguese or French, else English. */
     static String detect() {
-        String want = Config.LANGUAGE.trim().toLowerCase(Locale.ROOT);
+        String want = Prefs.language().trim().toLowerCase(Locale.ROOT);
         if (want.startsWith("pt")) return "pt";
         if (want.startsWith("fr")) return "fr";
         if (want.startsWith("en")) return "en";
         String tv = Locale.getDefault().getLanguage();
         return "pt".equals(tv) || "fr".equals(tv) ? tv : "en";
+    }
+
+    /** Re-reads the language (Settings → Preferences changes it while the app is running). */
+    static void applyLanguage() {
+        lang = detect();
+        en = lang.equals("en");
+        fr = lang.equals("fr");
     }
 
     /** For dates, numbers and capital letters in the language in use. */

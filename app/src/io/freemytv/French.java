@@ -163,6 +163,31 @@ final class French {
         T.put("Keep at least 1 app.", "Gardez au moins 1 appli.");
     }
 
+    static {
+        T.put("Apps", "Applis");
+        T.put("Preferences", "Préférences");
+        T.put("Hidden Apps", "Applis masquées");
+        T.put("City", "Ville");
+        T.put("Language", "Langue");
+        T.put("Temperature", "Température");
+        T.put("Automatic", "Automatique");
+        T.put("Cancel", "Annuler");
+        T.put("Search…", "Rechercher…");
+        T.put("Show all", "Tout afficher");
+        T.put("OK: hide or show", "OK : masquer ou afficher");
+        T.put("Hidden apps stay installed.", "Les applis masquées restent installées.");
+        T.put("OK or ← →: change", "OK ou ← → : changer");
+        T.put("OK: search or choose", "OK : chercher ou choisir");
+        T.put("Searching…", "Recherche…");
+        T.put("No city found.", "Aucune ville trouvée.");
+        T.put("Couldn't reach the city search.", "Recherche impossible.");
+        T.put("Turn on Free My TV", "Activer Free My TV");
+        T.put("On your computer, connect to this TV:", "Sur votre ordinateur, connectez-vous à cette TV :");
+        T.put("Then run this, once:", "Puis lancez ceci, une seule fois :");
+        T.put("This screen goes on by itself when it works.", "Cet écran continue tout seul quand ça marche.");
+        T.put("Waiting for the service…", "En attente du service…");
+    }
+
     static String of(String english) {
         String s = T.get(english);
         return s != null ? s : english;

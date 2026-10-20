@@ -65,7 +65,8 @@ itself with ADB there. Free My TV mode is the accessibility service `HomeKeyServ
 Amazon's comes up. Turn it on once from the computer (it persists across reboots):
 `adb shell settings put secure enabled_accessibility_services io.freemytv/io.freemytv.HomeKeyService`
 (if other services are already listed, append with `:`). *Original* in the app turns it off (`disableSelf`). Nothing of
-Amazon's is turned off. Then they open *Free My TV* → *Home Screen* → *Free My TV* to confirm.
+Amazon's is turned off. Then they open *Free My TV* → *Home Screen* → *Free My TV* to confirm; if the service isn't on yet,
+that screen shows these same commands (with the TV's IP) and goes on by itself once the service starts.
 
 TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is a Google TV streamer on HDMI
 (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set Free My TV up on the streamer.
@@ -85,6 +86,9 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
 - On-screen text is bilingual, `Ui.tr("pt", "en")`: add both. Comments in English, short, only where the why
   isn't obvious.
 - Settings come from `config.properties` through the generated `out/gen/io/freemytv/Config.java` (never edit that).
+  What the person changes on the TV (Settings → Preferences: city, language, temperature) is kept in `Prefs` and wins over
+  the file; the city search brings latitude, longitude, TMDB country and currency along. The shelf, hidden apps and recent
+  apps live in `HomeApps` (preferences, no ADB).
 - After any change, `./build.sh` must end with `Built FreeMyTV.apk`.
 
 ## Always
