@@ -91,7 +91,7 @@ final class HomeApps {
         {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
-    private static final int MAX_SHELF = 8;
+    static final int MAX_SHELF = 8;
     /** Live TV apps of some brands (the antenna's channels open through the standard Android request first). */
     static final String[] LIVE_TV_APPS = {"com.tcl.tv", "com.google.android.tv", "com.mediatek.wwtv.tvcenter", "com.sony.dtv.tvx"};
     /** Kept out of "All Apps" (only hidden, still installed). Add the ones your TV shows that you never use. */
@@ -113,22 +113,100 @@ final class HomeApps {
      */
     static List<Item> shelf(Context c, boolean extract) {
         List<Item> items = new ArrayList<>();
-        PackageManager pm = c.getPackageManager();
-        for (String[] d : SHELF) {
-            if (items.size() >= MAX_SHELF) break;
-            if (launchIntent(pm, d[2]) == null) continue;
+        for (String pkg : shelfPackages(c)) {
+            String[] d = known(pkg);
             Item it = new Item();
             it.kind = APP;
-            it.key = d[0];
-            it.label = d[1];
-            it.pkg = d[2];
-            it.tile = appTile(c, d[0], d[2], 0xFF000000 | Integer.parseInt(d[3], 16));
-            it.logo = shelfLogo(c, d[0], d[2], d[4], extract);
-            if (it.logo != null) it.logoInk = ink(it.logo);
-            it.logoDark = ownLogoCached(c, d[0] + "-dark");
-            it.logoScale = Float.parseFloat(d[5]);
+            it.pkg = pkg;
+            if (d != null) {
+                it.key = d[0];
+                it.label = d[1];
+                it.tile = appTile(c, d[0], pkg, 0xFF000000 | Integer.parseInt(d[3], 16));
+                it.logo = shelfLogo(c, d[0], pkg, d[4], extract);
+                if (it.logo != null) it.logoInk = ink(it.logo);
+                it.logoDark = ownLogoCached(c, d[0] + "-dark");
+                it.logoScale = Float.parseFloat(d[5]);
+            } else {
+                // An app picked in Settings that isn't one of the known streaming apps: its own TV art as the card.
+                it.key = pkg;
+                it.label = label(c.getPackageManager(), pkg);
+                it.tile = appTile(c, null, pkg, 0);
+            }
             items.add(it);
         }
+        return items;
+    }
+
+    private static String[] known(String pkg) {
+        for (String[] d : SHELF) if (d[2].equals(pkg)) return d;
+        return null;
+    }
+
+    private static String label(PackageManager pm, String pkg) {
+        try {
+            return String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
+        } catch (PackageManager.NameNotFoundException e) {
+            return pkg;
+        }
+    }
+
+    // MARK: - Which apps are on the shelf (Settings → Shelf Apps)
+
+    private static final String SHELF_PREFS = "shelf";
+
+    /** The apps picked in Settings, in order; null = nothing picked yet (the default list). */
+    private static List<String> shelfChoice(Context c) {
+        String s = c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).getString("order", null);
+        if (s == null) return null;
+        List<String> out = new ArrayList<>();
+        for (String p : s.split(",")) if (!p.isEmpty()) out.add(p);
+        return out;
+    }
+
+    /** Saves the shelf (in order); null goes back to the default list. */
+    static void setShelfChoice(Context c, List<String> pkgs) {
+        android.content.SharedPreferences.Editor e = c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).edit();
+        if (pkgs == null) e.remove("order"); else e.putString("order", android.text.TextUtils.join(",", pkgs));
+        e.apply();
+    }
+
+    /** The packages on the shelf now, in order: the pick, or the default list; only installed ones, up to MAX_SHELF. */
+    static List<String> shelfPackages(Context c) {
+        PackageManager pm = c.getPackageManager();
+        List<String> wanted = shelfChoice(c);
+        if (wanted == null) {
+            wanted = new ArrayList<>();
+            for (String[] d : SHELF) wanted.add(d[2]);
+        }
+        List<String> out = new ArrayList<>();
+        for (String pkg : wanted) {
+            if (out.size() >= MAX_SHELF) break;
+            if (!out.contains(pkg) && launchIntent(pm, pkg) != null) out.add(pkg);
+        }
+        return out;
+    }
+
+    /** Every TV app that could go on the shelf (name and package only), A to Z. */
+    static List<Item> shelfCandidates(Context c) {
+        PackageManager pm = c.getPackageManager();
+        Set<String> skip = new HashSet<>(HIDDEN);
+        skip.addAll(java.util.Arrays.asList(LIVE_TV_APPS));
+        skip.add(c.getPackageName());
+        Intent query = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
+        List<Item> items = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (ResolveInfo ri : pm.queryIntentActivities(query, 0)) {
+            String pkg = ri.activityInfo.packageName;
+            if (skip.contains(pkg) || !seen.add(pkg)) continue;
+            Item it = new Item();
+            it.kind = APP;
+            it.pkg = pkg;
+            it.key = pkg;
+            String[] d = known(pkg);
+            it.label = d != null ? d[1] : String.valueOf(ri.loadLabel(pm));
+            items.add(it);
+        }
+        Collections.sort(items, (x, y) -> x.label.toLowerCase(Locale.ROOT).compareTo(y.label.toLowerCase(Locale.ROOT)));
         return items;
     }
 
@@ -244,7 +322,8 @@ final class HomeApps {
     static List<Item> others(Context c) {
         PackageManager pm = c.getPackageManager();
         Set<String> skip = new HashSet<>();
-        for (String[] d : SHELF) skip.add(d[2]);
+        if (shelfChoice(c) != null) skip.addAll(shelfPackages(c));
+        else for (String[] d : SHELF) skip.add(d[2]);
         skip.addAll(java.util.Arrays.asList(LIVE_TV_APPS));
         skip.add(c.getPackageName());
         skip.addAll(HIDDEN);

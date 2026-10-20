@@ -156,6 +156,13 @@ final class French {
                 "à l'instant");
     }
 
+    static {
+        T.put("Shelf Apps", "Barre d'applis");
+        T.put("Back to default", "Par défaut");
+        T.put("OK: add or remove · ← →: reorder", "OK : ajouter ou retirer · ← → : ordre");
+        T.put("Keep at least 1 app.", "Gardez au moins 1 appli.");
+    }
+
     static String of(String english) {
         String s = T.get(english);
         return s != null ? s : english;

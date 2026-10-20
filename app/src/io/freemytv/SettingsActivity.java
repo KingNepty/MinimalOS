@@ -19,6 +19,9 @@ import android.view.Choreographer;
 import android.view.KeyEvent;
 import android.view.View;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -98,18 +101,25 @@ public class SettingsActivity extends Activity {
     }
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
-        private static final int MAIN = 0, HOME_CHOICE = 1;
+        private static final int MAIN = 0, HOME_CHOICE = 1, SHELF = 2;
+        private static final int VISIBLE = 10;   // rows of the shelf list on screen at once
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104;
         private static final int AMBER = 0xFFFFC266, INK = 0xFF1C1C1E;
 
         private final SettingsActivity activity;
         private final Scene scene = new Scene();
         private final Handler handler = new Handler(Looper.getMainLooper());
-        private final Spring[] pop = new Spring[5];
+        private final Spring[] pop = new Spring[VISIBLE + 1];
         private final RectF tmp = new RectF(), rowRect = new RectF();
         private JSONObject state = new JSONObject(), recs = new JSONObject();
         private boolean hasKey;
-        private int screen = MAIN, focus;
+        private int screen = MAIN, focus, scroll;
+        private List<HomeApps.Item> candidates = new ArrayList<>();
+        private List<String> picked = new ArrayList<>();
+        private int shelfCount;
+        private String note = "";
+        private long noteUntil;
+        private Paint hint, hintWarn;
         private boolean running, okDown, backDown;
         private long startedAt, lastNanos, pendingAt, lastSky;
         private int w, h;
@@ -143,6 +153,7 @@ public class SettingsActivity extends Activity {
         void resume() {
             if (running) return;
             running = true;
+            shelfCount = HomeApps.shelfPackages(getContext()).size();
             startedAt = SystemClock.uptimeMillis();
             lastNanos = 0;
             handler.post(poll);
@@ -184,6 +195,10 @@ public class SettingsActivity extends Activity {
             cellValue = Ui.numbers(Ui.regular, 25 * k, 0xD9FFFFFF);
             cellValue.setTextAlign(Paint.Align.RIGHT);
             warn = Ui.text(Ui.regular, 23 * k, AMBER);
+            hint = Ui.text(Ui.regular, 23 * k, 0x99FFFFFF);
+            hint.setTextAlign(Paint.Align.CENTER);
+            hintWarn = Ui.text(Ui.regular, 23 * k, AMBER);
+            hintWarn.setTextAlign(Paint.Align.CENTER);
             notice = new TextPaint(Ui.text(Ui.regular, 23 * k, 0xB3FFFFFF));
             spinner = new Paint(Paint.ANTI_ALIAS_FLAG);
             spinner.setStyle(Paint.Style.STROKE);
@@ -204,7 +219,8 @@ public class SettingsActivity extends Activity {
         }
 
         private int rowCount() {
-            return screen == MAIN ? 3 : 2;
+            if (screen == SHELF) return candidates.size() + 1;   // the apps, then "Back to default"
+            return screen == MAIN ? 4 : 2;
         }
 
         @Override protected void onDraw(Canvas c) {
@@ -213,7 +229,7 @@ public class SettingsActivity extends Activity {
             float dt = lastNanos == 0 ? 1 / 60f : Math.min(0.05f, (now - lastNanos) / 1e9f);
             lastNanos = now;
             for (int i = 0; i < pop.length; i++) {
-                pop[i].target = i == focus && i < rowCount() ? 1 : 0;
+                pop[i].target = i == (screen == SHELF ? focus - scroll : focus) && i < rowCount() ? 1 : 0;
                 pop[i].step(dt);
             }
             long up = SystemClock.uptimeMillis();
@@ -231,16 +247,19 @@ public class SettingsActivity extends Activity {
             c.drawText(Ui.tr("Início e tela de descanso da TV", "Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
-            if (screen == MAIN) drawMain(c, seconds); else drawChoice(c);
+            if (screen == MAIN) drawMain(c, seconds);
+            else if (screen == SHELF) drawShelf(c);
+            else drawChoice(c);
         }
 
         private void drawMain(Canvas c, float seconds) {
             boolean working = busy();
             String busyText = state.optString("busy");
             String mode = freeActive() ? "Free My TV" : Ui.tr("Original", "Original");
-            String[] labels = {Ui.tr("Início", "Home Screen"), Ui.tr("Tela de Descanso", "Screensaver"), Ui.tr("Ajustes da TV", "TV Settings")};
-            String[] values = {working ? "" : mode, Ui.tr("Ver agora", "Preview"), ""};
-            for (int i = 0; i < 3; i++) {
+            String[] labels = {Ui.tr("Início", "Home Screen"), Ui.tr("Apps do Início", "Shelf Apps"),
+                    Ui.tr("Tela de Descanso", "Screensaver"), Ui.tr("Ajustes da TV", "TV Settings")};
+            String[] values = {working ? "" : mode, shelfCount + (Ui.fr ? " applis" : " apps"), Ui.tr("Ver agora", "Preview"), ""};
+            for (int i = 0; i < 4; i++) {
                 float y = (LIST_TOP + i * (ROW_H + ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + ROW_H * k);
                 float f = drawRowBackground(c, i);
@@ -249,7 +268,7 @@ public class SettingsActivity extends Activity {
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[i], rowRect.left + 30 * k, base, rowLabel);
                 float right = rowRect.right - 30 * k;
-                if (i >= 2) {
+                if (i == 3) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
                     Symbols.draw(getContext(), c, "chevron_right", right - cw / 2, rowRect.centerY(), 22 * k, blend(0x66FFFFFF, 0x991C1C1E, f));
                 } else if (i == 0 && working) {
@@ -267,7 +286,7 @@ public class SettingsActivity extends Activity {
                 }
             }
 
-            float y = (LIST_TOP + 3 * (ROW_H + ROW_GAP) + 46) * k;
+            float y = (LIST_TOP + 4 * (ROW_H + ROW_GAP) + 46) * k;
             String error = state.optString("error");
             if (working && (busyText.contains("Permitir") || busyText.contains("Allow"))) {
                 c.drawText(Ui.tr("Na TV: marque “Sempre permitir” e aperte OK.", "On the TV: tick “Always allow” and press OK."),
@@ -358,6 +377,48 @@ public class SettingsActivity extends Activity {
             if (shown == 0) c.drawText(Ui.tr("Nenhum ainda.", "None yet."), x, y + 42 * k, notice);
         }
 
+        /** Shelf Apps: every TV app A to Z, the picked ones numbered in shelf order; the last row goes back to the default. */
+        private void drawShelf(Canvas c) {
+            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            c.drawText(Ui.tr("Apps do Início", "Shelf Apps"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            int total = rowCount();
+            for (int slot = 0; slot < VISIBLE && scroll + slot < total; slot++) {
+                int index = scroll + slot;
+                float y = (LIST_TOP + 10 + slot * (ROW_H + ROW_GAP)) * k;
+                rowRect.set(LIST_X * k, y, LIST_R * k, y + ROW_H * k);
+                float f = drawRowBackground(c, slot);
+                rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
+                float base = rowRect.centerY() + Ui.halfCap(rowLabel);
+                float right = rowRect.right - 30 * k;
+                if (index == candidates.size()) {
+                    c.drawText(Ui.tr("Voltar ao padrão", "Back to default"), rowRect.left + 30 * k, base, rowLabel);
+                    continue;
+                }
+                HomeApps.Item it = candidates.get(index);
+                float maxWidth = rowRect.width() - 60 * k - 150 * k;
+                c.drawText(TextUtils.ellipsize(it.label, new TextPaint(rowLabel), maxWidth, TextUtils.TruncateAt.END).toString(),
+                        rowRect.left + 30 * k, base, rowLabel);
+                int position = picked.indexOf(it.pkg);
+                if (position >= 0) {
+                    float cw = Symbols.width(getContext(), "check", 26 * k);
+                    Symbols.draw(getContext(), c, "check", right - cw / 2, rowRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, f));
+                    rowValue.setColor(blend(0xB3FFFFFF, 0xB31C1C1E, f));
+                    c.drawText(String.valueOf(position + 1), right - cw - 18 * k, base, rowValue);
+                }
+            }
+            // On the left, under the title: how it works, or the last notice.
+            if (SystemClock.uptimeMillis() < noteUntil) {
+                c.drawText(note, 500 * k, 790 * k, hintWarn);
+            } else {
+                c.drawText(Ui.tr("OK: pôr ou tirar · ← →: mudar a ordem", "OK: add or remove · ← →: reorder"), 500 * k, 790 * k, hint);
+                c.drawText(maxText(), 500 * k, 826 * k, hint);
+            }
+        }
+
+        private static String maxText() {
+            return Ui.fr ? HomeApps.MAX_SHELF + " applis au maximum." : Ui.tr("No máximo " + HomeApps.MAX_SHELF + " apps.", "Up to " + HomeApps.MAX_SHELF + " apps.");
+        }
+
         /** Home screen choice: Free My TV or the original, with a check on the one in use. */
         private void drawChoice(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
@@ -428,14 +489,19 @@ public class SettingsActivity extends Activity {
             switch (e.getKeyCode()) {
                 case KeyEvent.KEYCODE_DPAD_UP:
                     if (down && focus > 0) focus--;
+                    keepFocusVisible();
                     invalidate();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                     if (down && focus < rowCount() - 1) focus++;
+                    keepFocusVisible();
                     invalidate();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
+                    if (down && screen == SHELF) moveShelfApp(-1);
+                    return true;
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (down && screen == SHELF) moveShelfApp(1);
                     return true;
                 case KeyEvent.KEYCODE_DPAD_CENTER:
                 case KeyEvent.KEYCODE_ENTER:
@@ -453,8 +519,13 @@ public class SettingsActivity extends Activity {
                         if (e.getRepeatCount() == 0) backDown = true;
                     } else {
                         if (backDown && !e.isCanceled()) {
+                            if (screen == SHELF) {
+                                shelfCount = HomeApps.shelfPackages(getContext()).size();
+                                focus = 1;
+                            } else {
+                                focus = 0;
+                            }
                             screen = MAIN;
-                            focus = 0;
                         }
                         backDown = false;
                     }
@@ -463,6 +534,54 @@ public class SettingsActivity extends Activity {
                 default:
                     return false;
             }
+        }
+
+        private void keepFocusVisible() {
+            if (screen != SHELF) return;
+            if (focus < scroll) scroll = focus;
+            if (focus >= scroll + VISIBLE) scroll = focus - VISIBLE + 1;
+        }
+
+        private void say(String text) {
+            note = text;
+            noteUntil = SystemClock.uptimeMillis() + 2500;
+        }
+
+        /** OK on a row: put the app on the shelf (at the end) or take it off; the last row goes back to the default. */
+        private void toggleShelfApp() {
+            Context c = getContext();
+            if (focus == candidates.size()) {
+                HomeApps.setShelfChoice(c, null);
+                picked = new ArrayList<>(HomeApps.shelfPackages(c));
+                return;
+            }
+            String pkg = candidates.get(focus).pkg;
+            if (picked.contains(pkg)) {
+                if (picked.size() == 1) {
+                    say(Ui.tr("Deixe pelo menos 1 app.", "Keep at least 1 app."));
+                    return;
+                }
+                picked.remove(pkg);
+            } else {
+                if (picked.size() >= HomeApps.MAX_SHELF) {
+                    say(maxText());
+                    return;
+                }
+                picked.add(pkg);
+            }
+            HomeApps.setShelfChoice(c, picked);
+        }
+
+        /** Left/right on a picked app: one place earlier or later on the shelf. */
+        private void moveShelfApp(int by) {
+            if (focus >= candidates.size()) return;
+            String pkg = candidates.get(focus).pkg;
+            int at = picked.indexOf(pkg), to = at + by;
+            if (at < 0 || to < 0 || to >= picked.size()) return;
+            picked.remove(at);
+            picked.add(to, pkg);
+            HomeApps.setShelfChoice(getContext(), picked);
+            invalidate();
         }
 
         private void activate() {
@@ -475,11 +594,21 @@ public class SettingsActivity extends Activity {
                 }
                 screen = MAIN;
                 focus = 0;
+            } else if (screen == SHELF) {
+                toggleShelfApp();
+                invalidate();
+                return;
             } else if (focus == 0) {
                 if (busy()) return;
                 screen = HOME_CHOICE;
                 focus = freeActive() ? 0 : 1;
             } else if (focus == 1) {
+                candidates = HomeApps.shelfCandidates(c);
+                picked = new ArrayList<>(HomeApps.shelfPackages(c));
+                screen = SHELF;
+                focus = 0;
+                scroll = 0;
+            } else if (focus == 2) {
                 pause();
                 activity.showPreview();
             } else {
