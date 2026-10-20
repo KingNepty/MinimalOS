@@ -236,7 +236,7 @@ final class HomeData {
     // MARK: - Formatting
 
     private static Locale locale() {
-        return Ui.en ? Locale.US : PT;
+        return Ui.locale();
     }
 
     /** 580.4k · 21.0k · 1.04k · 5.61 (as short as possible; the dollar always with cents). */
@@ -266,6 +266,18 @@ final class HomeData {
     /** The weather in words, from Open-Meteo's WMO code. */
     static String condition(int code, boolean day) {
         if (code < 0) return "";
+        if (Ui.fr) {
+            if (code == 0) return day ? "Ciel dégagé" : "Nuit dégagée";
+            if (code == 1) return "Peu nuageux";
+            if (code == 2) return "Partiellement nuageux";
+            if (code == 3) return "Nuageux";
+            if (code == 45 || code == 48) return "Brouillard";
+            if (code >= 51 && code <= 57) return "Bruine";
+            if (code == 65 || code == 67 || code == 82) return "Forte pluie";
+            if (code >= 71 && code <= 77 || code == 85 || code == 86) return "Neige";
+            if (code >= 95) return "Orage";
+            return "Pluie";
+        }
         if (Ui.en) {
             if (code == 0) return "Clear";
             if (code == 1) return day ? "Mostly Sunny" : "Mostly Clear";
@@ -322,7 +334,7 @@ final class HomeData {
 
     static String hour(long at) {
         return Ui.en ? new SimpleDateFormat("h a", Locale.US).format(new java.util.Date(at))
-                : new SimpleDateFormat("HH'h'", PT).format(new java.util.Date(at));
+                : new SimpleDateFormat("HH'h'", Ui.locale()).format(new java.util.Date(at));
     }
 
     /** How long ago the data was fetched, if it's stale (no internet): "12 min ago". */
@@ -332,6 +344,7 @@ final class HomeData {
         if (age < every * 2) return "";
         long minutes = age / 60_000;
         if (Ui.en) return minutes < 60 ? minutes + " min ago" : (minutes / 60) + " h ago";
+        if (Ui.fr) return minutes < 60 ? "il y a " + minutes + " min" : "il y a " + (minutes / 60) + " h";
         return minutes < 60 ? "há " + minutes + " min" : "há " + (minutes / 60) + " h";
     }
 }

@@ -291,7 +291,8 @@ public class SettingsActivity extends Activity {
             int count = recs.optInt("count");
             if (!hasKey) line = Ui.tr("Sem chave do TMDB: veja o README (config.properties).", "No TMDB key: see the README (config.properties).");
             else if (!error.isEmpty()) line = Ui.tr("Erro: ", "Error: ") + error + ".";
-            else if (count > 0) line = Ui.tr("Ligadas · " + count + " títulos nos apps da TV, 3 novos a cada hora.",
+            else if (count > 0) line = Ui.fr ? "Activé · " + count + " titres des applis de la TV, 3 nouveaux chaque heure."
+                    : Ui.tr("Ligadas · " + count + " títulos nos apps da TV, 3 novos a cada hora.",
                     "On · " + count + " titles from the TV's apps, 3 new ones every hour.");
             else line = Ui.tr("Buscando os títulos…", "Fetching titles…");
             c.drawText(TextUtils.ellipsize(line, notice, 790 * k, TextUtils.TruncateAt.END).toString(), x, y + 42 * k, notice);
@@ -397,13 +398,18 @@ public class SettingsActivity extends Activity {
             if (m == null || !m.has(key)) return "—";
             long v = m.optLong(key);
             if (key.equals("homeMs")) return v + " ms";
-            if (key.equals("memAvailableMB") && v >= 1024) return String.format(Ui.en ? java.util.Locale.US : Ui.PT, "%.2f GB", v / 1024.0);
+            if (key.equals("memAvailableMB") && v >= 1024) return String.format(Ui.locale(), "%.2f GB", v / 1024.0);
             return v + " MB";
         }
 
         private static String ago(long at) {
             long minutes = Math.max(0, (System.currentTimeMillis() - at) / 60_000);
             if (minutes < 1) return Ui.tr("agora", "now");
+            if (Ui.fr) {
+                if (minutes < 60) return "il y a " + minutes + " min";
+                if (minutes < 48 * 60) return "il y a " + (minutes / 60) + " h";
+                return "il y a " + (minutes / 1440) + " jours";
+            }
             if (minutes < 60) return Ui.tr("há " + minutes + " min", minutes + " min ago");
             if (minutes < 48 * 60) return Ui.tr("há " + (minutes / 60) + " h", (minutes / 60) + " h ago");
             return Ui.tr("há " + (minutes / 1440) + " dias", (minutes / 1440) + " days ago");

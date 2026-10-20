@@ -57,6 +57,7 @@ final class Recs {
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     static final String[] PERIOD_LABEL = {"PARA ESTA MANHÃ", "PARA ESTA TARDE", "PARA ESTA NOITE"};
     static final String[] PERIOD_LABEL_EN = {"THIS MORNING", "THIS AFTERNOON", "TONIGHT"};
+    static final String[] PERIOD_LABEL_FR = {"POUR CE MATIN", "POUR CET APRÈS-MIDI", "POUR CE SOIR"};
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
         {"netflix", "netflix", "com.netflix.ninja"},
@@ -105,7 +106,7 @@ final class Recs {
     private volatile String error = "";
     private volatile boolean light;     // light design: builds only the cards (all three tabs' cards fit in memory)
     private volatile long failedAt, keyStamp;
-    private volatile boolean listEnglish;   // the saved list came in English (titles, genres and texts)
+    private volatile String listLang = "";   // language the saved list came in (titles, genres and texts)
 
     private Recs(Context c) {
         context = c;
@@ -116,7 +117,7 @@ final class Recs {
             if (saved != null) picks = parse(new JSONArray(saved));
             period = cache.getInt("period", -1);
             listAt = cache.getLong("listAt", 0);
-            listEnglish = cache.getBoolean("english", false);
+            listLang = cache.getString("lang", cache.getBoolean("english", false) ? "en" : "pt");
             keyStamp = cache.getLong("keyStamp", 0);
         } catch (Exception ignored) {
         }
@@ -151,7 +152,7 @@ final class Recs {
     String error() { return error; }
 
     static String periodLabel() {
-        return (Ui.en ? PERIOD_LABEL_EN : PERIOD_LABEL)[period(System.currentTimeMillis())];
+        return (Ui.en ? PERIOD_LABEL_EN : Ui.fr ? PERIOD_LABEL_FR : PERIOD_LABEL)[period(System.currentTimeMillis())];
     }
 
     private static int period(long now) {
@@ -235,7 +236,7 @@ final class Recs {
         if (!newKey && failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         int p = period(now);
         boolean stale = newKey || p != period || now - listAt > LIST_EVERY || now < listAt || picks.isEmpty()
-                || listEnglish != Ui.en;
+                || !listLang.equals(Ui.lang);
         boolean missing = false;
         for (Pick pick : wanted()) missing |= !pick.detailed || !hasImage(pick);
         if (!stale && !missing) return;
@@ -410,12 +411,12 @@ final class Recs {
         picks = list;
         period = p;
         listAt = System.currentTimeMillis();
-        listEnglish = Ui.en;
+        listLang = Ui.lang;
     }
 
     /** Language of titles and genres; the services come from the region. */
     private static String lang() {
-        return Ui.en ? "en-US" : "pt-BR";
+        return Ui.en ? "en-US" : Ui.fr ? "fr-FR" : "pt-BR";
     }
 
     private static void alternate(List<Pick> out, java.util.Set<String> seen, List<Pick> a, List<Pick> b, int max) {
@@ -446,7 +447,7 @@ final class Recs {
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */
     private void fetchDetails(Pick p) throws Exception {
         JSONObject o = get("/" + p.kind + "/" + p.id
-                + "?language=" + lang() + "&append_to_response=watch/providers,images&include_image_language=null,pt,en");
+                + "?language=" + lang() + "&append_to_response=watch/providers,images&include_image_language=null,pt,en,fr");
         String best = bestBackdrop(o.optJSONObject("images"));
         if (best != null) p.backdrop = best;
         List<String> parts = new ArrayList<>();
@@ -459,10 +460,12 @@ final class Recs {
         if (p.kind.equals("movie")) {
             int minutes = o.optInt("runtime");
             if (minutes > 0 && Ui.en) parts.add(minutes >= 60 ? (minutes / 60) + "h " + (minutes % 60) + "m" : minutes + "m");
+            else if (minutes > 0 && Ui.fr) parts.add(minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min");
             else if (minutes > 0) parts.add(minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min");
         } else {
             int seasons = o.optInt("number_of_seasons");
             if (seasons > 0 && Ui.en) parts.add(seasons == 1 ? "1 season" : seasons + " seasons");
+            else if (seasons > 0 && Ui.fr) parts.add(seasons == 1 ? "1 saison" : seasons + " saisons");
             else if (seasons > 0) parts.add(seasons == 1 ? "1 temporada" : seasons + " temporadas");
         }
         JSONObject wp = o.optJSONObject("watch/providers");
@@ -487,8 +490,14 @@ final class Recs {
         {"Talk", "Entrevistas"},
     };
 
+    private static final String[][] GENRES_FR = {
+        {"Action & Adventure", "Action et aventure"}, {"Sci-Fi & Fantasy", "Science-fiction et fantastique"},
+        {"War & Politics", "Guerre et politique"}, {"Kids", "Enfants"}, {"News", "Actualités"}, {"Soap", "Feuilleton"},
+        {"Talk", "Talk-show"},
+    };
+
     private static String genre(String name) {
-        for (String[] g : GENRES_PT) if (g[0].equalsIgnoreCase(name)) return g[1];
+        for (String[] g : Ui.fr ? GENRES_FR : GENRES_PT) if (g[0].equalsIgnoreCase(name)) return g[1];
         return name;
     }
 
@@ -635,7 +644,7 @@ final class Recs {
                         .put("detailed", p.detailed));
             }
             cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
-                    .putBoolean("english", listEnglish)
+                    .putString("lang", listLang)
                     .putLong("keyStamp", keyStamp).putInt("version", CACHE_VERSION).apply();
         } catch (Exception ignored) {
         }

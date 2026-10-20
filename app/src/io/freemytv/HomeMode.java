@@ -207,7 +207,8 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray(sorted(disabled)));
             save(c, s);
-            notice(c, Ui.tr("Free My TV ligado: Início e tela de descanso novos, " + disabled.size() + " apps desligados.",
+            notice(c, Ui.fr ? "Free My TV est activé : nouvel écran d'accueil et économiseur d'écran, " + disabled.size() + " applis désactivées."
+                    : Ui.tr("Free My TV ligado: Início e tela de descanso novos, " + disabled.size() + " apps desligados.",
                     "Free My TV is on: new home screen and screensaver, " + disabled.size() + " apps turned off."));
             busy(c, Ui.tr("Medindo o Free My TV…", "Measuring Free My TV…"));
             measureHomeTime(c, adb, FREE);
