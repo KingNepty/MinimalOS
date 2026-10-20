@@ -373,7 +373,7 @@ public class SettingsActivity extends Activity {
                     language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
                     Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
                     units.value = unitsName(oneOf(Prefs.temperature(), UNITS));
-                    Row size = new Row(Ui.tr("Apps na prateleira", "Shelf Size"), "shelf");
+                    Row size = new Row(Ui.tr("Apps por linha", "Shelf Size"), "shelf");
                     size.value = String.valueOf(Prefs.shelfSize());
                     rows.add(city);
                     rows.add(style);

@@ -31,7 +31,7 @@ final class Prefs {
     /** "apps" (the app grid on a color glow) or "foryou" (picks and cards). */
     static String homeStyle() { return get("homeStyle", "apps"); }
 
-    static final int SHELF_MIN = 4, SHELF_MAX = 12, SHELF_DEFAULT = 8;
+    static final int SHELF_MIN = 4, SHELF_MAX = 12, SHELF_DEFAULT = 6;
 
     /** How many apps the shelf holds (Settings → Preferences). */
     static int shelfSize() {

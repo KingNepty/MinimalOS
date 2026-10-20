@@ -41,9 +41,24 @@ import java.util.concurrent.Executors;
  */
 final class AppsHome extends View implements Choreographer.FrameCallback {
     // Layout, in a 1920 × 1080 space (scaled by k).
-    private static final int COLS = 4;
-    private static final float MARGIN = 120, TILE_W = 360, TILE_H = 202, GAP_X = 64, ROW_PITCH = 310;
-    private static final float PANEL_TOP = 692, PANEL_H = 270, PANEL_PAD = 40, TILE_Y0 = 726;
+    private static final float MARGIN = 120, GRID_W = 1632;
+    private static final float PANEL_TOP = 692, PANEL_H = 270, PANEL_PAD = 40;
+    // The grid's geometry follows Settings → Preferences → Shelf Size (apps per row, 6 by default): the grid keeps its
+    // width and the 16:9 tiles shrink to fit.
+    private int COLS = 6;
+    private float TILE_W = 183, TILE_H = 103, GAP_X = 24, ROW_PITCH = 211, TILE_Y0 = 775, TILE_R = 14;
+
+    private void layoutGrid() {
+        COLS = Prefs.shelfSize();
+        GAP_X = Math.max(20, 64 - (COLS - 4) * 10);
+        TILE_W = (GRID_W - (COLS - 1) * GAP_X) / COLS;
+        TILE_H = TILE_W * 9 / 16;
+        ROW_PITCH = TILE_H + 108;
+        TILE_Y0 = PANEL_TOP + (PANEL_H - TILE_H) / 2;
+        TILE_R = Math.max(12, 26 * TILE_H / 202);
+        tileShadow = null;
+        shaders = new BitmapShader[apps.size()];
+    }
     private static final float PILL_H = 72, PILL_CY = 104, PILL_GAP = 16, PILL_PAD = 26;
     private static final float SHADOW_PAD = 70;
     private static final int GRID = 0, PILLS = 1;
@@ -168,9 +183,11 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
     // MARK: - Data
 
     private void reload() {
+        layoutGrid();
         final Context c = getContext().getApplicationContext();
         LOADER.execute(() -> {
             List<HomeApps.Item> all = new ArrayList<>(HomeApps.shelf(c, false));
+            final int favorites = all.size();
             Set<String> have = new HashSet<>();
             for (HomeApps.Item it : all) have.add(it.pkg);
             for (HomeApps.Item it : HomeApps.others(c)) {
@@ -180,13 +197,14 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
             final int[] colors = new int[all.size()];
             for (int i = 0; i < colors.length; i++) colors[i] = brandOf(all.get(i).tile);
             final List<HomeApps.Item> in = HomeApps.allInputs(c);
-            handler.post(() -> apply(all, colors, in));
+            handler.post(() -> apply(all, favorites, colors, in));
         });
     }
 
-    private void apply(List<HomeApps.Item> list, int[] colors, List<HomeApps.Item> in) {
+    private void apply(List<HomeApps.Item> list, int favorites, int[] colors, List<HomeApps.Item> in) {
         String keep = index < apps.size() ? apps.get(index).pkg : null;
         apps = list;
+        fav = favorites;
         brand = colors;
         inputs = in;
         pop = new Spring[list.size()];
@@ -195,7 +213,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         int at = 0;
         for (int i = 0; i < list.size() && keep != null; i++) if (keep.equals(list.get(i).pkg)) at = i;
         index = Math.min(at, Math.max(0, list.size() - 1));
-        scrollRow.snap(index / COLS);
+        scrollRow.snap(rowOf(index));
         focusChanged(true);
         invalidate();
     }
@@ -378,12 +396,38 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
                 x - Ui.leftBearing(namePaint, name), (612 + 16 * (1 - f)) * k, namePaint);
     }
 
+    // The favorites (the shelf) fill the first rows; every other app starts on a row of its own, never in a favorites row.
+    private int fav;
+
+    private int slot(int i) {
+        if (i < fav) return i;
+        int favRows = (fav + COLS - 1) / COLS;
+        return favRows * COLS + (i - fav);
+    }
+
+    private int rowOf(int i) { return slot(i) / COLS; }
+    private int colOf(int i) { return slot(i) % COLS; }
+
+    /** The app in the row `row` that is nearest to column `col` (-1 if the row has none). */
+    private int inRow(int row, int col) {
+        int best = -1, bestGap = Integer.MAX_VALUE;
+        for (int i = 0; i < apps.size(); i++) {
+            if (rowOf(i) != row) continue;
+            int gap = Math.abs(colOf(i) - col);
+            if (gap < bestGap) {
+                bestGap = gap;
+                best = i;
+            }
+        }
+        return best;
+    }
+
     private float gridLeft() {
         return (1920 - (COLS * TILE_W + (COLS - 1) * GAP_X)) / 2f * k;
     }
 
     private void tileRect(int i, float rowScroll, RectF out) {
-        int row = i / COLS, col = i % COLS;
+        int row = rowOf(i), col = colOf(i);
         float x = gridLeft() + col * (TILE_W + GAP_X) * k;
         float y = (TILE_Y0 + (row - rowScroll) * ROW_PITCH) * k;
         out.set(x, y, x + TILE_W * k, y + TILE_H * k);
@@ -398,10 +442,11 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
         if (apps.isEmpty()) return;
         float rowScroll = scrollRow.value;
+        drawGroupLabel(c, rowScroll);
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < apps.size(); i++) {
                 if ((pass == 1) != (i == index && zone == GRID)) continue;
-                float rowOff = i / COLS - rowScroll;
+                float rowOff = rowOf(i) - rowScroll;
                 if (rowOff < -1f || rowOff > 1.7f) continue;
                 float alpha = rowOff < 0 ? 1 + rowOff : rowOff > 1 ? Math.max(0, 1 - (rowOff - 1) * 1.4f) : 1;
                 if (alpha <= 0.01f) continue;
@@ -410,12 +455,25 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         }
     }
 
+    /** "All apps" above the first row of the apps that are not favorites. */
+    private void drawGroupLabel(Canvas c, float rowScroll) {
+        if (fav == 0 || fav >= apps.size()) return;
+        float rowOff = rowOf(fav) - rowScroll;
+        if (rowOff < -0.3f || rowOff > 1.7f) return;
+        float alpha = rowOff > 1 ? Math.max(0, 1 - (rowOff - 1) * 1.4f) : rowOff < 0 ? 1 + rowOff / 0.3f : 1;
+        if (alpha <= 0.01f) return;
+        datePaint.setAlpha(Math.round(255 * 0.8f * alpha));
+        float y = (TILE_Y0 + rowOff * ROW_PITCH) * k - 26 * k;
+        c.drawText(Ui.tr("TODOS OS APPS", "ALL APPS"), gridLeft() - Ui.leftBearing(datePaint, "A"), y, datePaint);
+        datePaint.setAlpha(255);
+    }
+
     private void drawTile(Canvas c, int i, float rowScroll, float alpha) {
         tileRect(i, rowScroll, tmp);
         float f = Ui.clamp(pop[i].value), s = 1 + 0.11f * pop[i].value;
         float bw = tmp.width(), bh = tmp.height(), cx = tmp.centerX(), cy = tmp.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
-        float r = 26 * k * s;
+        float r = TILE_R * k * s;
         if (f > 0.02f) {
             // The pre-blurred shadow, grown with the tile.
             float pad = SHADOW_PAD * k;
@@ -455,7 +513,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         Paint blur = new Paint(Paint.ANTI_ALIAS_FLAG);
         blur.setColor(0xFF000000);
         blur.setMaskFilter(new BlurMaskFilter(24 * k, BlurMaskFilter.Blur.NORMAL));
-        new Canvas(b).drawRoundRect(pad, pad, pad + bw, pad + bh, 26 * k, 26 * k, blur);
+        new Canvas(b).drawRoundRect(pad, pad, pad + bw, pad + bh, TILE_R * k, TILE_R * k, blur);
         tileShadow = b;
         shadowFor = k;
         return b;
@@ -518,7 +576,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         nameIn.value = snapGlow ? 1 : 0;
         nameIn.velocity = 0;
         nameIn.target = 1;
-        scrollRow.target = index / COLS;
+        scrollRow.target = rowOf(index);
     }
 
     boolean onKey(KeyEvent e) {
@@ -607,17 +665,18 @@ final class AppsHome extends View implements Choreographer.FrameCallback {
         int n = apps.size();
         if (zone == GRID) {
             int next = index;
+            int lo = index < fav ? 0 : fav, hi = index < fav ? fav - 1 : n - 1;
             if (dx != 0) {
-                next = Math.max(0, Math.min(n - 1, index + dx));
+                next = Math.max(lo, Math.min(hi, index + dx));
             } else if (dy > 0) {
-                if (index + COLS <= n - 1) next = index + COLS;
-                else if (index / COLS < (n - 1) / COLS) next = n - 1;
+                int t = inRow(rowOf(index) + 1, colOf(index));
+                if (t >= 0) next = t;
             } else if (dy < 0) {
-                if (index >= COLS) {
-                    next = index - COLS;
+                if (rowOf(index) > 0) {
+                    next = inRow(rowOf(index) - 1, colOf(index));
                 } else {
                     zone = PILLS;
-                    pillIndex = nearestPill(gridLeft() + (index % COLS) * (TILE_W + GAP_X) * k + TILE_W * k / 2);
+                    pillIndex = nearestPill(gridLeft() + colOf(index) * (TILE_W + GAP_X) * k + TILE_W * k / 2);
                     click.move();
                     invalidate();
                     return;
