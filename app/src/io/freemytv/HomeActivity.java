@@ -15,7 +15,26 @@ import android.widget.TextView;
  * back to the TV's original one.
  */
 public class HomeActivity extends Activity {
-    private HomeView home;
+    private HomeView home;          // "For You" style
+    private AppsHome appsHome;      // "Apps" style
+    private String style = "";
+
+    /** Builds the home screen of the style chosen in Settings → Preferences. */
+    private void buildScreen() {
+        style = Prefs.homeStyle();
+        if (home != null) home.destroy();
+        if (appsHome != null) appsHome.destroy();
+        home = null;
+        appsHome = null;
+        if ("foryou".equals(style)) {
+            home = new HomeView(this);
+            setContentView(home);
+        } else {
+            appsHome = new AppsHome(this);
+            setContentView(appsHome);
+        }
+        getWindow().setBackgroundDrawable(null);
+    }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -34,18 +53,20 @@ public class HomeActivity extends Activity {
             return;
         }
         Ui.init(this);
-        home = new HomeView(this);
-        setContentView(home);
-        getWindow().setBackgroundDrawable(null);
+        buildScreen();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        if (home == null && appsHome == null) return;
+        if (!style.equals(Prefs.homeStyle())) buildScreen();   // changed in Settings
         if (home != null) home.resume();
+        if (appsHome != null) appsHome.resume();
     }
 
     @Override protected void onPause() {
         if (home != null) home.pause();
+        if (appsHome != null) appsHome.pause();
         super.onPause();
     }
 
@@ -53,15 +74,18 @@ public class HomeActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (home != null) home.reset(true);
+        if (appsHome != null) appsHome.reset(true);
     }
 
     @Override protected void onDestroy() {
         if (home != null) home.destroy();
+        if (appsHome != null) appsHome.destroy();
         super.onDestroy();
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         if (home != null && home.onKey(event)) return true;
+        if (appsHome != null && appsHome.onKey(event)) return true;
         return super.dispatchKeyEvent(event);
     }
 

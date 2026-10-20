@@ -205,6 +205,14 @@ final class French {
         T.put("Press OK to open", "Appuyez sur OK pour ouvrir");
     }
 
+    static {
+        T.put("GOOD MORNING", "BONJOUR");
+        T.put("GOOD AFTERNOON", "BON APRÈS-MIDI");
+        T.put("GOOD EVENING", "BONSOIR");
+        T.put("Home Style", "Style d'accueil");
+        T.put("No inputs found.", "Aucune entrée trouvée.");
+    }
+
     static String of(String english) {
         String s = T.get(english);
         return s != null ? s : english;

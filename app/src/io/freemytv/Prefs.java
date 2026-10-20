@@ -28,6 +28,8 @@ final class Prefs {
     static String region() { return get("region", Config.TMDB_REGION); }
     static String temperature() { return get("temperature", Config.TEMPERATURE); }
     static String currency() { return get("currency", Config.CURRENCY); }
+    /** "apps" (the app grid on a color glow) or "foryou" (picks and cards). */
+    static String homeStyle() { return get("homeStyle", "apps"); }
 
     static void put(String key, String value) {
         SharedPreferences p = sp;

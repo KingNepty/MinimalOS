@@ -367,11 +367,14 @@ public class SettingsActivity extends Activity {
                     Row city = new Row(Ui.tr("Cidade", "City"), "city");
                     city.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
                     city.chevron = true;
+                    Row style = new Row(Ui.tr("Estilo do Início", "Home Style"), "style");
+                    style.value = Prefs.homeStyle().equals("foryou") ? Ui.tr("Para você", "For You") : Ui.tr("Apps", "Apps");
                     Row language = new Row(Ui.tr("Idioma", "Language"), "lang");
                     language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
                     Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
                     units.value = unitsName(oneOf(Prefs.temperature(), UNITS));
                     rows.add(city);
+                    rows.add(style);
                     rows.add(language);
                     rows.add(units);
                     break;
@@ -826,7 +829,9 @@ public class SettingsActivity extends Activity {
         private void cycle(int by) {
             if (focus >= rows.size()) return;
             String tag = rows.get(focus).tag;
-            if (tag.equals("lang")) {
+            if (tag.equals("style")) {
+                Prefs.put("homeStyle", Prefs.homeStyle().equals("foryou") ? "apps" : "foryou");
+            } else if (tag.equals("lang")) {
                 String next = next(LANGUAGES, oneOf(Prefs.language(), LANGUAGES), by);
                 Prefs.put("language", next);
                 Ui.applyLanguage();
