@@ -188,6 +188,19 @@ final class French {
         T.put("Waiting for the service…", "En attente du service…");
     }
 
+    static {
+        T.put("Search", "Rechercher");
+        T.put("See which of your apps has it", "Voyez quelle appli l'a");
+        T.put("Results", "Résultats");
+        T.put("New search…", "Nouvelle recherche…");
+        T.put("Not on your apps", "Pas sur vos applis");
+        T.put("None of your apps has this title.", "Aucune de vos applis n'a ce titre.");
+        T.put("No results.", "Aucun résultat.");
+        T.put("Couldn't reach the search.", "Recherche impossible.");
+        T.put("No TMDB key (see the README).", "Pas de clé TMDB (voir le README).");
+        T.put("Movie or show", "Film ou série");
+    }
+
     static String of(String english) {
         String s = T.get(english);
         return s != null ? s : english;

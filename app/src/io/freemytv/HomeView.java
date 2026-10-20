@@ -3,10 +3,12 @@ package io.freemytv;
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
@@ -114,8 +116,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
     private List<Recs.Pick> cards = new ArrayList<>();
-    private final Spring[] topFocus = new Spring[6];
-    private final RectF[] topRects = new RectF[6];
+    private final Spring[] topFocus = new Spring[7];
+    private final RectF[] topRects = new RectF[7];
     private final Spring[] cardFocus = new Spring[3];
     private final RectF[] cardRects = new RectF[3];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
@@ -297,7 +299,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(LAYER_TYPE_HARDWARE, null);
         for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) addView(v);
         drawerLayer.setVisibility(INVISIBLE);
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
@@ -360,6 +362,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Starting state (Home pressed while the home screen is showing): first app focused, drawer and sheet closed. */
     void reset(boolean animated) {
+        handler.removeCallbacks(topShelfTask);
+        if (topApp != null) {
+            topApp = null;
+            recs.wantApp(null, null);
+        }
         zone = Z_SHELF;
         shelfIndex = 0;
         sheetOpen = false;
@@ -383,6 +390,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The three corner buttons, with their names in the current language. */
     private void makeLightButtons() {
         lightButtons.clear();
+        lightButtons.add(HomeApps.action(HomeApps.SEARCH, "search", Ui.tr("Buscar", "Search"), "search"));
         lightButtons.add(HomeApps.action(HomeApps.LIVE_TV, "live", Ui.tr("TV aberta", "Live TV"), "live_tv"));
         lightButtons.add(HomeApps.action(HomeApps.INPUTS, "inputs", Ui.tr("Entradas HDMI", "HDMI Inputs"), "hdmi"));
         lightButtons.add(HomeApps.action(HomeApps.SETTINGS, "settings", Ui.tr("Configurações", "Settings"), "settings"));
@@ -544,8 +552,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
+        boolean tiltMoving = tiltX.step(dt) | tiltY.step(dt);
+        tilesMoving |= tiltMoving;
         if (topMoving) status.invalidate();
-        heroMoving |= topMoving | cardsMoving;
+        heroMoving |= topMoving | cardsMoving | tiltMoving;
         boolean drawerItemsMoving = step(drawerFocus, dt);
         boolean gridMoving = step(gridFocus, dt) | scroll.step(dt);
         boolean drawerMoving = drawer.step(dt);
@@ -634,6 +644,30 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     // MARK: - Recommendations: hero and background
+
+    // Top Shelf (tvOS): with the focus on an app of the shelf (or on the cards above it), the cards and the background
+    // show titles that are on that app. A short pause first, so sweeping along the shelf doesn't load every app's.
+    private HomeApps.Item topApp;
+    private final Runnable topShelfTask = this::applyTopShelf;
+
+    private HomeApps.Item wantedTopApp() {
+        if (sheetOpen) return null;
+        if (zone == Z_SHELF && !shelf.isEmpty() && shelfIndex < shelf.size()) return shelf.get(shelfIndex);
+        return zone == Z_CARDS ? topApp : null;
+    }
+
+    private void topShelfFocus() {
+        handler.removeCallbacks(topShelfTask);
+        if (wantedTopApp() != topApp) handler.postDelayed(topShelfTask, 220);
+    }
+
+    private void applyTopShelf() {
+        HomeApps.Item want = wantedTopApp();
+        if (want == topApp) return;
+        topApp = want;
+        recs.wantApp(want == null ? null : want.pkg, want == null ? null : want.key);
+        updateCards();
+    }
 
     private Recs.Pick currentPick() {
         return picks.isEmpty() ? null : picks.get(Math.min(pickIndex, picks.size() - 1));
@@ -1032,7 +1066,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Paint text = lQuote;
         // The corner buttons' names appear in this row: the quotes fade out while one of them has focus.
         float fade = 1;
-        for (int i = 3; i < 6; i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
+        for (int i = 3; i < 7; i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
         if (fade <= 0.01f) return;
         int textColor = text.getColor();
         text.setColor(Ui.alpha(textColor, fade));
@@ -1092,6 +1126,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float cx = base.centerX(), cy = base.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
+        boolean tilted = fc > 0.05f && tilt(c, cx, cy, fc);
         // Shadow at the resting icon size, enlarged by the transform (so the blur stays cached): short at rest, deep
         // and lower when focused.
         c.save();
@@ -1113,12 +1148,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 c.drawRoundRect(cell, r, r, tileFill);
                 tileFill.setShader(null);
             }
+            logoParallax(c, fc);
             drawLogo(c, it, cell, s, style[2]);
+            c.restore();
         } else if (it.logo != null) {
             tileFill.setShader(null);
             tileFill.setColor(0xFF161618);
             c.drawRoundRect(cell, r, r, tileFill);
+            logoParallax(c, fc);
             drawLogo(c, it, cell, s, 0);
+            c.restore();
         } else {
             clip.reset();
             clip.addRoundRect(cell, r, r, Path.Direction.CW);
@@ -1127,6 +1166,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (it.tile != null) c.drawBitmap(it.tile, null, cell, bitmapPaint);
             c.restore();
         }
+        if (fc > 0.05f) specular(c, cell, r, fc);
+        if (tilted) c.restore();
+    }
+
+    /** The logo floats a little above its tile: it moves against the tilt (c.restore() after drawing it). */
+    private void logoParallax(Canvas c, float fc) {
+        c.save();
+        c.translate(tiltY.value * 0.7f * k * fc, -tiltX.value * 0.7f * k * fc);
     }
 
     /**
@@ -1687,7 +1734,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             moveGrid(dx, dy);
             return;
         }
-        if (moveLight(dx, dy)) return;
+        if (moveLight(dx, dy)) {
+            kick(dx, dy);
+            topShelfFocus();
+            return;
+        }
         switch (zone) {
             case Z_SHELF:
                 if (dx != 0) {
@@ -1749,6 +1800,48 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         retarget(false);
         click.move();
+        kick(dx, dy);
+        topShelfFocus();
+    }
+
+    // MARK: - Tilt: the focused icon or card leans toward where the focus came from and settles back (tvOS parallax)
+
+    private final Spring tiltX = new Spring(0.5f, 0.45f, 0), tiltY = new Spring(0.5f, 0.45f, 0);
+    private final android.graphics.Camera camera = new android.graphics.Camera();
+    private final Matrix tiltMatrix = new Matrix();
+
+    private void kick(int dx, int dy) {
+        if (dx == 0 && dy == 0) return;
+        tiltY.value = 9f * dx;
+        tiltX.value = -7f * dy;
+        tiltY.velocity = tiltX.velocity = 0;
+        tiltY.target = tiltX.target = 0;
+    }
+
+    /** Rotates the canvas in 3D around (cx, cy) by the tilt springs; true if it did (then c.restore() when done). */
+    private boolean tilt(Canvas c, float cx, float cy, float amount) {
+        float ry = tiltY.value * amount, rx = tiltX.value * amount;
+        if (Math.abs(ry) < 0.05f && Math.abs(rx) < 0.05f) return false;
+        camera.save();
+        camera.rotateY(ry);
+        camera.rotateX(rx);
+        camera.getMatrix(tiltMatrix);
+        camera.restore();
+        tiltMatrix.preTranslate(-cx, -cy);
+        tiltMatrix.postTranslate(cx, cy);
+        c.save();
+        c.concat(tiltMatrix);
+        return true;
+    }
+
+    /** A soft diagonal highlight that slides with the tilt, like light moving over glass. */
+    private void specular(Canvas c, RectF cell, float r, float f) {
+        float pos = 0.5f - Math.max(-0.45f, Math.min(0.45f, tiltY.value / 16f));
+        float w = cell.width();
+        sheen.setShader(new LinearGradient(cell.left + w * (pos - 0.35f), cell.top, cell.left + w * (pos + 0.35f), cell.bottom,
+                new int[] {0x00FFFFFF, Ui.alpha(0xFFFFFFFF, 0.26f * f), 0x00FFFFFF}, new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        c.drawRoundRect(cell, r, r, sheen);
+        sheen.setShader(null);
     }
 
     private static int nearest(RectF[] rects, float x) {
@@ -1822,6 +1915,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             r = tileRects[shelfIndex];
         }
         click.open();
+        if (it.kind == HomeApps.SEARCH) {
+            activity.startActivity(new Intent(activity, SearchActivity.class));
+            return;
+        }
         if (it.kind == HomeApps.ALL_APPS) {
             openSheet();
             return;
@@ -1855,7 +1952,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             x = topRects[i].right + 4 * k;
         }
         float b = L_BUTTON * k, right = CONTENT_R * k, cy = L_BUTTON_CY * k;
-        for (int i = 2; i >= 0; i--) {
+        for (int i = 3; i >= 0; i--) {
             topRects[3 + i].set(right - b, cy - b / 2, right, cy + b / 2);
             right -= b + L_BUTTON_GAP * k;
         }
@@ -1869,7 +1966,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
     private void updateCards() {
-        List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
+        List<Recs.Pick> list = topApp == null ? null : recs.forApp(topApp.pkg, topApp.key, TAB_KIND[tab]);
+        if (list == null || list.isEmpty()) list = recs.now(TAB_KIND[tab]);   // an app with no picks: the usual ones
         if (!samePicks(list, cards)) {
             cards = list;
             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
@@ -1977,6 +2075,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float cx = base.centerX(), cy = base.centerY() - 6 * k * v;
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
+        boolean tilted = f > 0.05f && tilt(c, cx, cy, f);
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
@@ -2009,6 +2108,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     Ui.alpha(0xFFFFFFFF, 0.9f * f), Ui.alpha(0xFFFFFFFF, 0.35f * f), Shader.TileMode.CLAMP));
             c.drawRoundRect(cell, r, r, rim);
         }
+        if (f > 0.05f) specular(c, cell, r, f * 0.8f);
+        if (tilted) c.restore();
         if (p == null) return;
         TextPaint tp = new TextPaint(lCardTitle);
         c.drawText(TextUtils.ellipsize(p.title, tp, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 46 * k, lCardTitle);
@@ -2024,7 +2125,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawLightButtons(Canvas c) {
         applyTone();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             RectF r = topRects[3 + i];
             float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.1f * f, rad = r.width() / 2 * s;
             cell.set(r.centerX() - rad, r.centerY() - rad, r.centerX() + rad, r.centerY() + rad);
@@ -2078,7 +2179,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             case Z_TOP:
                 if (dx != 0) {
-                    int next = Math.max(0, Math.min(5, topIndex + dx));
+                    int next = Math.max(0, Math.min(6, topIndex + dx));
                     if (next == topIndex) return true;
                     topIndex = next;
                     if (topIndex < 3) selectTab(topIndex);   // like Apple TV tabs: focusing a tab selects it

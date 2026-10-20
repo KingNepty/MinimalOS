@@ -191,6 +191,30 @@ final class Recs {
         for (Pick p : picks) {
             if ((kind == null || kind.equals(p.kind)) && (!p.detailed || p.pkg != null)) list.add(p);   // app missing: skip
         }
+        return three(list);
+    }
+
+    private volatile String focusPkg = "", focusKey = "";
+
+    /** The shelf app in focus (Top Shelf): its picks are wanted too, so their details and images get loaded. */
+    void wantApp(String pkg, String key) {
+        focusPkg = pkg == null ? "" : pkg;
+        focusKey = key == null ? "" : key;
+        if (!focusPkg.isEmpty()) refreshIfStale();
+    }
+
+    /** Up to 3 of the list's titles that are on this app (rotating by the hour like now()); kind as in now(). */
+    List<Pick> forApp(String pkg, String key, String kind) {
+        List<Pick> list = new ArrayList<>();
+        if (!hasKey(context) || pkg == null) return list;
+        for (Pick p : picks) {
+            boolean mine = pkg.equals(p.pkg) || (p.app != null && p.app.equals(key));
+            if (mine && (kind == null || kind.equals(p.kind)) && (!p.detailed || p.pkg != null)) list.add(p);
+        }
+        return three(list);
+    }
+
+    private static List<Pick> three(List<Pick> list) {
         if (list.isEmpty()) return list;
         long hour = System.currentTimeMillis() / 3600_000L;
         // Three per hour, never two from the same franchise ("Law & Order" and "Law & Order: Special…").
@@ -359,14 +383,54 @@ final class Recs {
         });
     }
 
-    /** This hour's picks for the three tabs (Explore, Movies, Shows), without repeats. */
+    /** This hour's picks for the three tabs (Explore, Movies, Shows), without repeats, and the focused app's. */
     List<Pick> wanted() {
         List<Pick> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (String kind : new String[] {null, "movie", "tv"}) {
             for (Pick p : now(kind)) if (seen.add(key(p))) out.add(p);
+            if (!focusPkg.isEmpty()) for (Pick p : forApp(focusPkg, focusKey, kind)) if (seen.add(key(p))) out.add(p);
         }
         return out;
+    }
+
+    /** A title from the search, and the TV's app that has it (if any). */
+    static final class Hit {
+        String title = "", kind = "", year = "", app, pkg, serviceName = "";
+    }
+
+    /** TMDB search; for each result, which of the TV's streaming apps has it in your country. Those that do come first. */
+    List<Hit> search(String query) throws Exception {
+        JSONArray found = get("/search/multi?include_adult=false&language=" + lang() + "&query="
+                + URLEncoder.encode(query, "UTF-8")).getJSONArray("results");
+        List<Hit> onApps = new ArrayList<>(), others = new ArrayList<>();
+        for (int i = 0; i < found.length() && onApps.size() + others.size() < 10; i++) {
+            JSONObject o = found.getJSONObject(i);
+            String kind = o.optString("media_type");
+            if (!kind.equals("movie") && !kind.equals("tv")) continue;
+            Hit h = new Hit();
+            h.kind = kind;
+            h.title = o.optString(kind.equals("movie") ? "title" : "name");
+            String date = o.optString(kind.equals("movie") ? "release_date" : "first_air_date");
+            h.year = date.length() >= 4 ? date.substring(0, 4) : "";
+            try {
+                JSONObject results = get("/" + kind + "/" + o.getInt("id") + "/watch/providers").optJSONObject("results");
+                JSONObject here = results == null ? null : results.optJSONObject(region());
+                JSONArray flat = here == null ? null : here.optJSONArray("flatrate");
+                for (int j = 0; flat != null && j < flat.length() && h.pkg == null; j++) {
+                    String[] s = service(flat.getJSONObject(j).optString("provider_name"));
+                    if (s != null && installedPackage(s) != null) {
+                        h.app = s[1];
+                        h.pkg = installedPackage(s);
+                        h.serviceName = SERVICE_NAME.get(s[1]);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            (h.pkg != null ? onApps : others).add(h);
+        }
+        onApps.addAll(others);
+        return onApps;
     }
 
     /** Movies and shows are numbered separately on TMDB: a pick is identified by type + number. */
