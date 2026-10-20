@@ -45,6 +45,9 @@ final class Prefs {
     /** Whether the "All apps" grid under the favorites is open. */
     static boolean allAppsOpen() { return get("allApps", "1").equals("1"); }
 
+    /** How "All apps" is ordered: "recent" (the last opened first) or "az". */
+    static boolean allAppsAz() { return get("allAppsSort", "recent").equals("az"); }
+
     static void put(String key, String value) {
         SharedPreferences p = sp;
         if (p != null) p.edit().putString(key, value).apply();

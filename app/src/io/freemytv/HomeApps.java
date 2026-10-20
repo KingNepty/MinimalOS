@@ -380,6 +380,11 @@ final class HomeApps {
 
     /** Installed, enabled TV apps that are not on the home screen (the TV's Settings is among them), plus our own. */
     static List<Item> others(Context c) {
+        return others(c, false);
+    }
+
+    /** `alphabetical`: A to Z only; otherwise the ones you opened last come first. */
+    static List<Item> others(Context c, boolean alphabetical) {
         PackageManager pm = c.getPackageManager();
         Set<String> skip = new HashSet<>();
         if (shelfChoice(c) != null) skip.addAll(shelfPackages(c));
@@ -405,7 +410,7 @@ final class HomeApps {
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
         // The ones you opened last come first.
         List<Item> recent = new ArrayList<>();
-        for (String pkg : recentApps(c)) {
+        for (String pkg : alphabetical ? new ArrayList<String>() : recentApps(c)) {
             if (recent.size() >= RECENT_SHOWN) break;
             for (Item it : items) {
                 if (it.pkg.equals(pkg)) {
