@@ -228,8 +228,21 @@ final class HomeApps {
         list.remove(pkg);
         list.add(0, pkg);
         while (list.size() > RECENT_MAX) list.remove(list.size() - 1);
-        c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).edit()
-                .putString("recent", android.text.TextUtils.join(",", list)).apply();
+        android.content.SharedPreferences prefs = c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE);
+        android.content.SharedPreferences.Editor edit = prefs.edit()
+                .putString("recent", android.text.TextUtils.join(",", list));
+        edit.putLong("at:" + pkg, System.currentTimeMillis());
+        edit.apply();
+    }
+
+    /** The apps opened last, newest first. */
+    static List<String> recentPackages(Context c) {
+        return recentApps(c);
+    }
+
+    /** When the app was last opened from the home screen (epoch ms), or 0. */
+    static long lastOpened(Context c, String pkg) {
+        return c.getSharedPreferences(SHELF_PREFS, Context.MODE_PRIVATE).getLong("at:" + pkg, 0);
     }
 
     /** Every TV app that could go on the shelf (name and package only), A to Z. */

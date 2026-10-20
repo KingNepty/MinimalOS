@@ -336,6 +336,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.postDelayed(tick, 15_000);
         checkNotices();
         reload();
+        topShelfFocus();
         updatePalette();
         updatePicks();
         if (sheetOpen) closeSheet();
@@ -385,6 +386,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (tab != 0) selectTab(0);
         retarget(!animated);
         motionDirty = true;
+        topShelfFocus();
     }
 
     /** The three corner buttons, with their names in the current language. */
@@ -1967,7 +1969,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
     private void updateCards() {
         List<Recs.Pick> list = topApp == null ? null : recs.forApp(topApp.pkg, topApp.key, TAB_KIND[tab]);
-        if (list == null || list.isEmpty()) list = recs.now(TAB_KIND[tab]);   // an app with no picks: the usual ones
+        if (topApp != null && (list == null || list.isEmpty())) list = spotlight(topApp);   // no titles on this app: it, and your recent apps
+        if (list == null || list.isEmpty()) list = recs.now(TAB_KIND[tab]);
+        if (!samePicks(list, cards) && !cards.isEmpty() && !imagesReady(list)) {
+            // The new cards' images are still loading: keep the ones on screen (no gray cards) and swap when they are
+            // there (Recs tells us), or after a few seconds anyway.
+            if (swapWaitSince == 0) swapWaitSince = SystemClock.uptimeMillis();
+            if (SystemClock.uptimeMillis() - swapWaitSince < 4000) {
+                for (Recs.Pick p : list) recs.backdrop(p);
+                for (Recs.Pick p : recs.wanted()) recs.backdrop(p);
+                return;
+            }
+        }
+        swapWaitSince = 0;
         if (!samePicks(list, cards)) {
             cards = list;
             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
@@ -1977,9 +1991,142 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
         }
         for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
-        Backdrop b = cards.isEmpty() ? null : recs.backdrop(cards.get(0));
+        Backdrop b = cards.isEmpty() ? null : backdropOf(cards.get(0));
         if (cards.isEmpty() || b != null) showBackdrop(b);
         heroDirty = true;
+    }
+
+    private long swapWaitSince;
+
+    private boolean imagesReady(List<Recs.Pick> list) {
+        for (Recs.Pick p : list) if (backdropOf(p) == null) return false;
+        return true;
+    }
+
+    // MARK: - App spotlight: what the cards show for an app with no titles (Spotify, YouTube...)
+
+    private final java.util.LinkedHashMap<Integer, Backdrop> appBackdrops = new java.util.LinkedHashMap<>();
+
+    private Backdrop backdropOf(Recs.Pick p) {
+        if (p.art == null) return recs.backdrop(p);
+        Backdrop b = appBackdrops.get(p.id);
+        if (b != null) return b;
+        // The app's color, a vertical gradient: it goes through the same frosting as a photo (pale by day, dark at night).
+        Bitmap bmp = Bitmap.createBitmap(Backdrop.W, Backdrop.H, Bitmap.Config.ARGB_8888);
+        Canvas cv = new Canvas(bmp);
+        Paint pt = new Paint();
+        pt.setShader(new LinearGradient(0, 0, 0, Backdrop.H, p.brand, blend(p.brand, 0xFF000000, 0.5f), Shader.TileMode.CLAMP));
+        cv.drawRect(0, 0, Backdrop.W, Backdrop.H, pt);
+        b = Backdrop.make(bmp, true);
+        while (appBackdrops.size() >= 6) appBackdrops.remove(appBackdrops.keySet().iterator().next());
+        appBackdrops.put(p.id, b);
+        return b;
+    }
+
+    private HomeApps.Item findApp(String pkg) {
+        for (HomeApps.Item it : shelf) if (pkg.equals(it.pkg)) return it;
+        for (HomeApps.Item it : others) if (pkg.equals(it.pkg)) return it;
+        return null;
+    }
+
+    /** The focused app first (with when it was last opened), then the two apps opened before it (or the shelf's). */
+    private List<Recs.Pick> spotlight(HomeApps.Item app) {
+        List<Recs.Pick> out = new ArrayList<>();
+        out.add(appPick(app, true));
+        Context c = getContext();
+        List<String> order = new ArrayList<>(HomeApps.recentPackages(c));
+        for (HomeApps.Item it : shelf) order.add(it.pkg);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        seen.add(app.pkg);
+        seen.add(c.getPackageName());
+        for (String pkg : order) {
+            if (out.size() >= 3) break;
+            if (pkg == null || !seen.add(pkg)) continue;
+            HomeApps.Item it = findApp(pkg);
+            if (it != null) out.add(appPick(it, false));
+        }
+        return out;
+    }
+
+    private Recs.Pick appPick(HomeApps.Item it, boolean focused) {
+        Recs.Pick p = new Recs.Pick();
+        p.kind = "app";
+        p.id = it.pkg.hashCode();
+        p.title = it.label;
+        p.pkg = it.pkg;
+        p.detailed = true;
+        p.meta = focused ? openedText(HomeApps.lastOpened(getContext(), it.pkg)) : "";
+        int[] style = TILE_STYLE.get(it.key);
+        p.artIsLogo = it.logo != null && style != null;
+        p.art = p.artIsLogo ? it.logo : it.tile;
+        p.brand = brandOf(it.tile);
+        int edge = edgeColor(it.tile, blend(p.brand, 0xFF000000, 0.5f));
+        p.fill0 = p.artIsLogo ? style[0] : edge;
+        p.fill1 = p.artIsLogo ? style[1] : edge;
+        return p;
+    }
+
+    /** The most colorful of a sample of the app's art: its brand color (a gray if it has none). */
+    private static int brandOf(Bitmap tile) {
+        int best = 0xFF3A3A3C;
+        if (tile == null) return best;
+        float bestScore = 0.15f;
+        float[] hsv = new float[3];
+        try {
+            for (int yy = 0; yy < 7; yy++) {
+                for (int xx = 0; xx < 12; xx++) {
+                    int px = tile.getPixel((xx * 2 + 1) * tile.getWidth() / 24, (yy * 2 + 1) * tile.getHeight() / 14);
+                    android.graphics.Color.colorToHSV(px, hsv);
+                    float score = hsv[1] * hsv[2];
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = px | 0xFF000000;
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return best;
+    }
+
+    /** The banner's own edge color (the average of its corners), so it blends into the card instead of sitting in a box. */
+    private static int edgeColor(Bitmap tile, int fallback) {
+        if (tile == null) return fallback;
+        try {
+            int w = tile.getWidth() - 3, h = tile.getHeight() - 3;
+            int[] px = {tile.getPixel(2, 2), tile.getPixel(w, 2), tile.getPixel(2, h), tile.getPixel(w, h)};
+            int r = 0, g = 0, b = 0;
+            for (int c : px) {
+                r += (c >> 16) & 255;
+                g += (c >> 8) & 255;
+                b += c & 255;
+            }
+            return 0xFF000000 | ((r / 4) << 16) | ((g / 4) << 8) | (b / 4);
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private static String openedText(long at) {
+        if (at == 0) return Ui.tr("Aperte OK para abrir", "Press OK to open");
+        long minutes = Math.max(0, (System.currentTimeMillis() - at) / 60_000);
+        String n = minutes < 1 ? "" : minutes < 60 ? minutes + " min" : minutes < 2880 ? (minutes / 60) + " h" : (minutes / 1440) + (Ui.fr ? " jours" : Ui.en ? " days" : " dias");
+        if (minutes < 1) return Ui.fr ? "Ouvert à l'instant" : Ui.tr("Aberto agora", "Opened just now");
+        return Ui.fr ? "Ouvert il y a " + n : Ui.tr("Aberto há " + n, "Opened " + n + " ago");
+    }
+
+    /** An app's card: its art on its colors (the logo on the shelf icon's gradient, or the TV banner centered). */
+    private void drawAppCard(Canvas c, Recs.Pick p, boolean wide) {
+        fill.setShader(new LinearGradient(0, cell.top, 0, cell.bottom, p.fill0, p.fill1, Shader.TileMode.CLAMP));
+        c.drawRect(cell, fill);
+        fill.setShader(null);
+        if (p.art == null) return;
+        float aw = p.art.getWidth(), ah = p.art.getHeight();
+        float room = p.artIsLogo ? 0.5f : 0.86f;
+        float s = Math.min(cell.width() * room / aw, cell.height() * (p.artIsLogo ? 0.4f : 0.9f) / ah);
+        float dw = aw * s, dh = ah * s;
+        tmp.set(cell.centerX() - dw / 2, cell.centerY() - dh / 2, cell.centerX() + dw / 2, cell.centerY() + dh / 2);
+        c.drawBitmap(p.art, null, tmp, bitmapPaint);
     }
 
     private void selectTab(int index) {
@@ -2088,10 +2235,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clip.addRoundRect(cell, r, r, Path.Direction.CW);
         c.save();
         c.clipPath(clip);
-        Backdrop b = p == null ? null : recs.backdrop(p);
+        Backdrop b = p == null || p.art != null ? null : recs.backdrop(p);
         Bitmap img = b == null ? null : (i == 0 ? b.wide : b.tall);
         if (img != null) {
             c.drawBitmap(img, null, cell, bitmapPaint);
+        } else if (p != null && p.art != null) {
+            drawAppCard(c, p, i == 0);
         } else {
             fill.setShader(null);
             fill.setColor(tone(0xFFDADADF, 0xFF2C2C2E));

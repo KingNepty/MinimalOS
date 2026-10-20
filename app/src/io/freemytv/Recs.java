@@ -45,6 +45,10 @@ final class Recs {
         String kind;            // "movie" or "tv"
         String title, backdrop, meta = "", app, pkg;
         boolean detailed;
+        // kind "app": the card is an app of the TV (no TMDB image): its art, and the colors behind it.
+        android.graphics.Bitmap art;
+        boolean artIsLogo;
+        int brand, fill0, fill1;
     }
 
     interface Listener { void onRecs(); }
@@ -53,7 +57,7 @@ final class Recs {
     private static final String IMAGES = "https://image.tmdb.org/t/p/original";
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 4;
+    private static final int CACHE_VERSION = 5;
     /** How many titles in the list, and how many of the most popular on each of the TV's services go into it. */
     private static final int MAX_PICKS = 40, PER_SERVICE = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
@@ -66,7 +70,7 @@ final class Recs {
      */
     private static final String[][] SERVICES = {
         {"netflix", "netflix", "com.netflix.ninja"},
-        {"prime video", "prime", "com.amazon.amazonvideo.livingroom"},
+        {"prime video", "prime", "com.amazon.amazonvideo.livingroom|com.amazon.firebat"},
         {"disney", "disney", "com.disney.disneyplus"},
         {"hulu", "hulu", "com.hulu.livingroomplus"},
         {"paramount", "paramount", "com.cbs.ott"},
@@ -502,12 +506,24 @@ final class Recs {
             String[] service = serviceByApp.get(e.getKey());
             List<Pick> top = new ArrayList<>(), topShows = new ArrayList<>();
             try {
-                JSONArray jm = get("/discover/movie?vote_count.gte=100&primary_release_date.gte=" + day(-730)
-                        + "&primary_release_date.lte=" + day(0) + one).getJSONArray("results");
-                JSONArray jt = get("/discover/tv?vote_count.gte=50&air_date.gte=" + day(-180) + "&air_date.lte=" + day(0)
-                        + one).getJSONArray("results");
-                for (int i = 0; i < jm.length() && top.size() < PER_SERVICE; i++) add(top, jm.getJSONObject(i), "movie");
-                for (int i = 0; i < jt.length() && topShows.size() < PER_SERVICE; i++) add(topShows, jt.getJSONObject(i), "tv");
+                // Movies: the most popular on this service among the recent releases that people rated well. If that
+                // leaves too few, go further back.
+                for (int back : new int[] {400, 900}) {
+                    if (top.size() >= PER_SERVICE) break;
+                    JSONArray jm = get("/discover/movie?vote_count.gte=100&vote_average.gte=5.8&primary_release_date.gte=" + day(-back)
+                            + "&primary_release_date.lte=" + day(0) + one).getJSONArray("results");
+                    for (int i = 0; i < jm.length() && top.size() < PER_SERVICE; i++) addNew(top, jm.getJSONObject(i), "movie");
+                }
+                // Shows: new-ish shows with a recent episode first (not the 25-year-old series that every service has),
+                // then older ones if the service has few. Talk shows and news left out.
+                String[][] tiers = {{"1095", "120", "6.5"}, {"2190", "180", "6.3"}, {"36500", "180", "6.0"}};
+                for (String[] t : tiers) {
+                    if (topShows.size() >= PER_SERVICE) break;
+                    JSONArray jt = get("/discover/tv?vote_count.gte=50&vote_average.gte=" + t[2] + "&first_air_date.gte=" + day(-Integer.parseInt(t[0]))
+                            + "&air_date.gte=" + day(-Integer.parseInt(t[1])) + "&air_date.lte=" + day(0)
+                            + "&without_genres=10767,10763" + one).getJSONArray("results");
+                    for (int i = 0; i < jt.length() && topShows.size() < PER_SERVICE; i++) addNew(topShows, jt.getJSONObject(i), "tv");
+                }
             } catch (Exception ex) {
                 AppLog.w("recommendations on " + e.getKey() + ": " + ex.getMessage());
             }
@@ -538,6 +554,12 @@ final class Recs {
         period = p;
         listAt = System.currentTimeMillis();
         listLang = Ui.lang;
+    }
+
+    /** add(), skipping a title the list already has. */
+    private static void addNew(List<Pick> list, JSONObject o, String kind) {
+        for (Pick p : list) if (p.id == o.optInt("id") && p.kind.equals(kind)) return;
+        add(list, o, kind);
     }
 
     private static List<Pick> filterApp(List<Pick> picks, String app) {
@@ -750,7 +772,7 @@ final class Recs {
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
                 images.put(p.backdrop, backdrop);
-                while (images.size() > (forLight ? 10 : 4)) images.remove(images.keySet().iterator().next());
+                while (images.size() > (forLight ? 18 : 4)) images.remove(images.keySet().iterator().next());
             }
             notifyListeners();
         } catch (IOException | RuntimeException | OutOfMemoryError e) {

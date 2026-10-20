@@ -201,6 +201,10 @@ final class French {
         T.put("Movie or show", "Film ou série");
     }
 
+    static {
+        T.put("Press OK to open", "Appuyez sur OK pour ouvrir");
+    }
+
     static String of(String english) {
         String s = T.get(english);
         return s != null ? s : english;

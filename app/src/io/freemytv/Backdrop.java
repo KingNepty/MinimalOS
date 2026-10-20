@@ -59,7 +59,8 @@ final class Backdrop {
         src.recycle();
         if (forLight) {
             // Light design: everything comes from the photo without scrims.
-            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = card(out, TALL_W, TALL_H);
+            float[] focus = focalPoint(out);
+            Bitmap wide = card(out, WIDE_W, WIDE_H, focus), tall = card(out, TALL_W, TALL_H, focus);
             int[] frost = reduce(out, FW, FH, 3, 3);
             int[] light = whiten(frost.clone(), 0.82f);
             int[] glass = reduce(out, GW, GH, 2, 2);
@@ -141,12 +142,51 @@ final class Backdrop {
         return new Bitmap[] {out, frost};
     }
 
-    /** The center of the photo at the card's aspect ratio, filtered down (halving while possible) to the exact size. */
-    private static Bitmap card(Bitmap full, int w, int h) {
+    /**
+     * Where the photo's subject is, as fractions of its width and height: the center of mass of where there is detail
+     * (edges), with skin tones counting double and a mild pull toward the middle, so a face at the side of a wide photo
+     * stays in the portrait card. {0.5, 0.5} when the photo has nothing to go by.
+     */
+    private static float[] focalPoint(Bitmap full) {
+        final int gw = 96, gh = 54;
+        Bitmap small = Bitmap.createScaledBitmap(full, gw, gh, true);
+        int[] px = new int[gw * gh];
+        small.getPixels(px, 0, gw, 0, 0, gw, gh);
+        if (small != full) small.recycle();
+        float[] lum = new float[gw * gh];
+        for (int i = 0; i < px.length; i++) {
+            int p = px[i];
+            lum[i] = (0.299f * ((p >> 16) & 255) + 0.587f * ((p >> 8) & 255) + 0.114f * (p & 255)) / 255f;
+        }
+        double sum = 0, sx = 0, sy = 0;
+        for (int y = 1; y < gh - 1; y++) {
+            for (int x = 1; x < gw - 1; x++) {
+                int i = y * gw + x;
+                float detail = Math.abs(lum[i + 1] - lum[i - 1]) + Math.abs(lum[i + gw] - lum[i - gw]);
+                int p = px[i], r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+                if (r > 95 && g > 40 && b > 20 && r > g && r > b && r - g > 15 && lum[i] > 0.18f) detail *= 2f;   // skin
+                float dx = (x - gw / 2f) / (gw / 2f), dy = (y - gh / 2f) / (gh / 2f);
+                detail *= 0.55f + 0.45f * (float) Math.exp(-(dx * dx + dy * dy) * 1.2);
+                double wgt = detail * detail;
+                sum += wgt;
+                sx += wgt * x;
+                sy += wgt * y;
+            }
+        }
+        if (sum <= 1e-6) return new float[] {0.5f, 0.5f};
+        return new float[] {(float) (sx / sum / gw), (float) (sy / sum / gh)};
+    }
+
+    /** The photo cut at the card's aspect ratio around its subject, filtered down (halving while possible) to the exact size. */
+    private static Bitmap card(Bitmap full, int w, int h, float[] focus) {
         float ratio = (float) w / h;
         int cw = Math.min(full.getWidth(), Math.round(full.getHeight() * ratio));
         int ch = Math.min(full.getHeight(), Math.round(cw / ratio));
-        Bitmap b = Bitmap.createBitmap(full, (full.getWidth() - cw) / 2, (full.getHeight() - ch) / 2, cw, ch);
+        // Mostly the subject, a little of the middle (the photos are composed around it): never past the photo's edges.
+        float fx = 0.5f + 0.85f * (focus[0] - 0.5f), fy = 0.5f + 0.85f * (focus[1] - 0.5f);
+        int left = Math.max(0, Math.min(full.getWidth() - cw, Math.round(fx * full.getWidth() - cw / 2f)));
+        int top = Math.max(0, Math.min(full.getHeight() - ch, Math.round(fy * full.getHeight() - ch / 2f)));
+        Bitmap b = Bitmap.createBitmap(full, left, top, cw, ch);
         while (b.getWidth() / 2 >= w) {
             Bitmap half = Bitmap.createScaledBitmap(b, b.getWidth() / 2, b.getHeight() / 2, true);
             if (b != full) b.recycle();
