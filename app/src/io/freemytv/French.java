@@ -225,6 +225,7 @@ final class French {
         T.put("New version ", "Nouvelle version ");
         T.put("You're up to date", "Vous êtes à jour");
         T.put("Couldn't reach GitHub", "GitHub injoignable");
+        T.put("No release yet", "Aucune version publiée");
         T.put("Downloading… 0%", "Téléchargement… 0 %");
         T.put("Downloading… ", "Téléchargement… ");
         T.put("Confirm on the TV", "Confirmez sur la TV");

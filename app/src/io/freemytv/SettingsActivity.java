@@ -537,7 +537,8 @@ public class SettingsActivity extends Activity {
                     status = Updater.newer(found.version, have) ? Ui.tr("Nova versão ", "New version ") + found.version
                             : Ui.tr("Você está em dia", "You're up to date");
                 } catch (Exception e) {
-                    status = Ui.tr("Sem conexão com o GitHub", "Couldn't reach GitHub");
+                    status = String.valueOf(e.getMessage()).contains("404") ? Ui.tr("Nenhuma versão publicada", "No release yet")
+                            : Ui.tr("Sem conexão com o GitHub", "Couldn't reach GitHub");
                     AppLog.w("update check: " + e.getMessage());
                 }
                 final Updater.Info result = found;
