@@ -138,7 +138,7 @@ public class SettingsActivity extends Activity {
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, APPS = 2, PREFS = 3, SHELF = 4, HIDDEN = 5, CITY = 6, SETUP = 7,
-                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10;
+                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10, UPDATES = 11;
         private static final int VISIBLE = 10;   // rows of a list on screen at once
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104,
                 MAIN_H = 62, MAIN_GAP = 8;
@@ -284,7 +284,7 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean isList(int s) {
-            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY;
+            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY || s == UPDATES;
         }
 
         /** The Preferences menu and the three screens under it. */
@@ -313,6 +313,10 @@ public class SettingsActivity extends Activity {
                 hidden = HomeApps.hiddenApps(c);
             } else if (s == SETUP) {
                 buildSetup();
+            } else if (s == UPDATES) {
+                if (updateInfo == null) checkUpdates(false);
+            } else if (s == PREFS) {
+                checkUpdates(true);
             }
             buildRows();
             keepFocusVisible();
@@ -327,6 +331,7 @@ public class SettingsActivity extends Activity {
                 case PREFS_HOME: return Ui.tr("Layout do Início", "Home Layout");
                 case PREFS_BG: return Ui.tr("Fundo", "Background");
                 case PREFS_REGION: return Ui.tr("Região e idioma", "Region & Language");
+                case UPDATES: return Ui.tr("Atualizações", "Updates");
                 case SHELF: return Ui.tr("Apps do Início", "Shelf Apps");
                 case HIDDEN: return Ui.tr("Apps ocultos", "Hidden Apps");
                 case CITY: return Ui.tr("Cidade", "City");
@@ -387,9 +392,40 @@ public class SettingsActivity extends Activity {
                     region.symbol = "tv";
                     region.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
                     region.desc = Ui.tr("Cidade (clima), idioma e temperatura.", "City (weather), language and temperature.");
-                    for (Row r : new Row[] {home, bg, region}) {
+                    Row update = new Row(Ui.tr("Atualizações", "Updates"), "g_update");
+                    update.symbol = "sync";
+                    update.value = updateInfo != null && Updater.newer(updateInfo.version, Updater.installed(getContext()))
+                            ? Ui.tr("Nova versão", "Update available") : Updater.installed(getContext());
+                    update.desc = Ui.tr("Veja se há uma versão nova e instale.", "Check for a new version and install it.");
+                    for (Row r : new Row[] {home, bg, region, update}) {
                         r.chevron = true;
                         rows.add(r);
+                    }
+                    break;
+                }
+                case UPDATES: {
+                    String have = Updater.installed(getContext());
+                    Row version = new Row(Ui.tr("Versão instalada", "Installed version"), "ver");
+                    version.value = have;
+                    rows.add(version);
+                    if (!Updater.configured()) {
+                        Row source = new Row(Ui.tr("Origem das atualizações", "Update source"), "none");
+                        source.value = Ui.tr("Não definida", "Not set");
+                        source.desc = Ui.tr("Defina update_repo=dono/repositório no config.properties e compile de novo.",
+                                "Set update_repo=owner/repository in config.properties and build again.");
+                        rows.add(source);
+                        break;
+                    }
+                    Row check = new Row(Ui.tr("Procurar atualizações", "Check for updates"), "check");
+                    check.value = updateStatus;
+                    check.desc = Ui.tr("Pergunta ao GitHub se existe uma versão mais nova.", "Asks GitHub if there is a newer version.");
+                    rows.add(check);
+                    if (updateInfo != null && Updater.newer(updateInfo.version, have)) {
+                        Row install = new Row(Ui.tr("Instalar a versão ", "Install version ") + updateInfo.version, "install");
+                        install.value = updateInfo.size > 0 ? (updateInfo.size / 1024 / 1024) + " MB" : "";
+                        String notes = updateInfo.notes.replace("\r", "").replace("\n", " ").replaceAll("[#*`]", "").trim();
+                        install.desc = notes.length() > 220 ? notes.substring(0, 217) + "…" : notes;
+                        rows.add(install);
                     }
                     break;
                 }
@@ -476,6 +512,77 @@ public class SettingsActivity extends Activity {
                 default:
                     break;
             }
+        }
+
+        // Updates (GitHub releases)
+        private Updater.Info updateInfo;
+        private String updateStatus = "";
+        private boolean updateBusy;
+        private static long lastUpdateCheck;
+
+        /** Asks GitHub for the latest release (a quiet check when `quiet`: no status text, once an hour). */
+        private void checkUpdates(final boolean quiet) {
+            if (!Updater.configured() || updateBusy) return;
+            if (quiet && SystemClock.uptimeMillis() - lastUpdateCheck < 3600_000L && lastUpdateCheck != 0) return;
+            lastUpdateCheck = SystemClock.uptimeMillis();
+            updateBusy = true;
+            if (!quiet) updateStatus = Ui.tr("Procurando…", "Checking…");
+            buildRows();
+            final String have = Updater.installed(getContext());
+            new Thread(() -> {
+                Updater.Info found = null;
+                String status;
+                try {
+                    found = Updater.latest();
+                    status = Updater.newer(found.version, have) ? Ui.tr("Nova versão ", "New version ") + found.version
+                            : Ui.tr("Você está em dia", "You're up to date");
+                } catch (Exception e) {
+                    status = Ui.tr("Sem conexão com o GitHub", "Couldn't reach GitHub");
+                    AppLog.w("update check: " + e.getMessage());
+                }
+                final Updater.Info result = found;
+                final String shown = status;
+                handler.post(() -> {
+                    updateBusy = false;
+                    if (result != null) updateInfo = result;
+                    updateStatus = quiet && result != null ? "" : shown;
+                    if (screen == UPDATES || screen == PREFS) buildRows();
+                    invalidate();
+                });
+            }, "update-check").start();
+        }
+
+        private void installUpdate() {
+            if (updateInfo == null || updateInfo.url.isEmpty() || updateBusy) {
+                say(Ui.tr("Esta versão não tem um arquivo .apk.", "This release has no .apk file."));
+                return;
+            }
+            updateBusy = true;
+            final Updater.Info info = updateInfo;
+            final Context c = getContext().getApplicationContext();
+            updateStatus = Ui.tr("Baixando… 0%", "Downloading… 0%");
+            buildRows();
+            new Thread(() -> {
+                String status;
+                try {
+                    java.io.File apk = Updater.download(c, info, pct -> handler.post(() -> {
+                        updateStatus = Ui.tr("Baixando… ", "Downloading… ") + pct + "%";
+                        invalidate();
+                    }));
+                    Updater.install(c, apk);
+                    status = Ui.tr("Confirme na TV", "Confirm on the TV");
+                } catch (Exception e) {
+                    status = Ui.tr("Falhou: ", "Failed: ") + e.getMessage();
+                    AppLog.w("update: " + e.getMessage());
+                }
+                final String shown = status;
+                handler.post(() -> {
+                    updateBusy = false;
+                    updateStatus = shown;
+                    if (screen == UPDATES) buildRows();
+                    invalidate();
+                });
+            }, "update-install").start();
         }
 
         private void keepFocusVisible() {
@@ -901,6 +1008,7 @@ public class SettingsActivity extends Activity {
                 case PREFS_HOME: enter(PREFS, 0); break;
                 case PREFS_BG: enter(PREFS, 1); break;
                 case PREFS_REGION: enter(PREFS, 2); break;
+                case UPDATES: enter(PREFS, 3); break;
                 case PREFS: enter(MAIN, 2); break;
                 default: enter(MAIN, 0); break;
             }
@@ -1129,7 +1237,13 @@ public class SettingsActivity extends Activity {
                 return;
             } else if (screen == PREFS) {
                 String group = rows.get(focus).tag;
-                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG : PREFS_REGION, 0);
+                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG
+                        : group.equals("g_update") ? UPDATES : PREFS_REGION, 0);
+                return;
+            } else if (screen == UPDATES) {
+                String tag = rows.get(focus).tag;
+                if (tag.equals("check")) checkUpdates(false);
+                else if (tag.equals("install")) installUpdate();
                 return;
             } else if (isPrefs(screen)) {
                 if (rows.get(focus).tag.equals("phone")) {
