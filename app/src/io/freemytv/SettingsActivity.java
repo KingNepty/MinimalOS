@@ -386,6 +386,12 @@ public class SettingsActivity extends Activity {
                     rows.add(style);
                     rows.add(bg);
                     if (bgColor != null) rows.add(bgColor);
+                    if (Prefs.bgMode().equals("image")) {
+                        Row phone = new Row(Ui.tr("Fotos do celular", "Pictures from phone"), "phone");
+                        phone.value = String.valueOf(PhoneUpload.pictures(getContext()).size());
+                        phone.chevron = true;
+                        rows.add(phone);
+                    }
                     rows.add(size);
                     rows.add(language);
                     rows.add(units);
@@ -1039,6 +1045,10 @@ public class SettingsActivity extends Activity {
                 enter(rows.get(focus).tag.equals("shelf") ? SHELF : HIDDEN, 0);
                 return;
             } else if (screen == PREFS) {
+                if (rows.get(focus).tag.equals("phone")) {
+                    activity.startActivity(new Intent(activity, PhoneUploadActivity.class));
+                    return;
+                }
                 if (rows.get(focus).tag.equals("city")) {
                     enter(CITY, 0);
                     if (cityResults.isEmpty()) askCity();

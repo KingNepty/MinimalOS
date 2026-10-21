@@ -153,6 +153,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                         if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")) files.add(f);
                     }
                 }
+                files.addAll(PhoneUpload.pictures(c));   // the ones sent from the phone
                 Recs recs = Recs.get(c);
                 for (Recs.Pick p : recs.showcase()) {
                     java.io.File f = recs.readyImage(p);

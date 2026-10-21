@@ -105,6 +105,17 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
             android:theme="@style/FreeMyTV.Home" />
 
+        <!-- A web page on the TV for sending pictures from a phone to the Images background (Settings → Preferences). -->
+        <activity
+            android:name=".PhoneUploadActivity"
+            android:process=":home"
+            android:exported="false"
+            android:label="Pictures from phone"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection"
+            android:theme="@style/FreeMyTV.Home" />
+
         <service
             android:name=".Screensaver"
             android:process=":home"
