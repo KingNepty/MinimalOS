@@ -133,13 +133,13 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray());
             save(c, s);
-            notice(c, Ui.tr("Free My TV ligado: o botão Início abre o Free My TV.",
-                    "Free My TV is on: the Home button opens Free My TV."));
+            notice(c, Ui.tr("MinimalOS ligado: o botão Início abre o MinimalOS.",
+                    "MinimalOS is on: the Home button opens MinimalOS."));
             done(c, null);
             HomeKeyService.openHome(c);
         } catch (Exception e) {
             AppLog.w(android.util.Log.getStackTraceString(e));
-            done(c, Ui.tr("Não deu para ligar o Free My TV: ", "Couldn't turn on Free My TV: ") + e);
+            done(c, Ui.tr("Não deu para ligar o MinimalOS: ", "Couldn't turn on MinimalOS: ") + e);
         }
     }
 
@@ -163,8 +163,8 @@ final class HomeMode {
     private static void verifyFire(Context app) {
         fireService(app, HomeKeyService.running());
         if (!HomeKeyService.running()) {
-            notice(app, Ui.tr("O Início do Free My TV está desligado na TV. Pelo computador: ",
-                    "Free My TV's home screen is off on the TV. From a computer: ") + FIRE_ON);
+            notice(app, Ui.tr("O Início do MinimalOS está desligado na TV. Pelo computador: ",
+                    "MinimalOS's home screen is off on the TV. From a computer: ") + FIRE_ON);
         }
     }
 
@@ -218,16 +218,16 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray(sorted(disabled)));
             save(c, s);
-            notice(c, Ui.fr ? "Free My TV est activé : nouvel écran d'accueil et économiseur d'écran, " + disabled.size() + " applis désactivées."
-                    : Ui.tr("Free My TV ligado: Início e tela de descanso novos, " + disabled.size() + " apps desligados.",
-                    "Free My TV is on: new home screen and screensaver, " + disabled.size() + " apps turned off."));
-            busy(c, Ui.tr("Medindo o Free My TV…", "Measuring Free My TV…"));
+            notice(c, Ui.fr ? "MinimalOS est activé : nouvel écran d'accueil et économiseur d'écran, " + disabled.size() + " applis désactivées."
+                    : Ui.tr("MinimalOS ligado: Início e tela de descanso novos, " + disabled.size() + " apps desligados.",
+                    "MinimalOS is on: new home screen and screensaver, " + disabled.size() + " apps turned off."));
+            busy(c, Ui.tr("Medindo o MinimalOS…", "Measuring MinimalOS…"));
             measureHomeTime(c, adb, FREE);
             done(c, null);
             adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
             ModeJob.schedule(c, ModeJob.MEMORY, FREE, 120_000);
         } catch (Exception e) {
-            done(c, Ui.tr("Não deu para ligar o Free My TV: ", "Couldn't turn on Free My TV: ") + e.getMessage());
+            done(c, Ui.tr("Não deu para ligar o MinimalOS: ", "Couldn't turn on MinimalOS: ") + e.getMessage());
         }
     }
 
@@ -298,8 +298,8 @@ final class HomeMode {
                     JSONObject s = state(app);
                     s.put("homeReverted", true);
                     save(app, s);
-                    notice(app, Ui.tr("O Início do Free My TV caiu 3 vezes seguidas; voltei para o Início da Amazon.",
-                            "Free My TV's home screen crashed 3 times in a row; I switched back to Amazon's."));
+                    notice(app, Ui.tr("O Início do MinimalOS caiu 3 vezes seguidas; voltei para o Início da Amazon.",
+                            "MinimalOS's home screen crashed 3 times in a row; I switched back to Amazon's."));
                 } catch (Exception e) {
                     AppLog.w("could not give the home screen back: " + e);
                 }
@@ -317,8 +317,8 @@ final class HomeMode {
                 }
                 s.put("homeReverted", true).put("disabled", kept);
                 save(app, s);
-                notice(app, Ui.tr("O Início do Free My TV caiu 3 vezes seguidas; voltei para o Início original.",
-                        "Free My TV's home screen crashed 3 times in a row; I switched back to the original one."));
+                notice(app, Ui.tr("O Início do MinimalOS caiu 3 vezes seguidas; voltei para o Início original.",
+                        "MinimalOS's home screen crashed 3 times in a row; I switched back to the original one."));
                 adb.shell("am start -a android.intent.action.MAIN -c android.intent.category.HOME");
             } catch (Exception e) {
                 AppLog.w("could not give the home screen back: " + e.getMessage());
@@ -376,14 +376,14 @@ final class HomeMode {
                 latest.put("disabled", new JSONArray(sorted(disabled)));
                 save(app, latest);
             } catch (Exception e) {
-                notice(app, Ui.tr("Não consegui conferir o Free My TV: ", "Couldn't check Free My TV: ") + e.getMessage());
+                notice(app, Ui.tr("Não consegui conferir o MinimalOS: ", "Couldn't check MinimalOS: ") + e.getMessage());
                 return;
             }
             if (!fixed.isEmpty()) {
                 notice(app, (updated ? Ui.tr("A atualização da TV religou ", "The TV update turned back on ")
                         : Ui.tr("Desliguei o que faltava: ", "Turned off what was missing: ")) + String.join(", ", fixed) + ".");
             } else if (updated) {
-                notice(app, Ui.tr("A TV foi atualizada; o Free My TV continua igual.", "The TV was updated; Free My TV is still on."));
+                notice(app, Ui.tr("A TV foi atualizada; o MinimalOS continua igual.", "The TV was updated; MinimalOS is still on."));
             }
         }
     }

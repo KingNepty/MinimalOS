@@ -421,7 +421,7 @@ final class HomeApps {
         }
         items.removeAll(recent);
         items.addAll(0, recent);
-        items.add(special(c, SETTINGS, "freemytv-settings", "Free My TV", "sparkles"));
+        items.add(special(c, SETTINGS, "freemytv-settings", "MinimalOS", "sparkles"));
         return items;
     }
 

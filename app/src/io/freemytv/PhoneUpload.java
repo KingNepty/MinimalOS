@@ -272,14 +272,14 @@ final class PhoneUpload {
     /** The page the phone sees, in the TV's language. */
     private static String page() {
         String html = "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-                + "<title>Free My TV</title><style>"
+                + "<title>MinimalOS</title><style>"
                 + "body{font:17px system-ui,sans-serif;background:#0b0f1f;color:#fff;margin:0;padding:20px;max-width:560px;margin:auto}"
                 + "h1{font-size:24px}input,button{font:inherit;padding:14px;border-radius:12px;border:0;width:100%;box-sizing:border-box;margin:8px 0}"
                 + "input{background:#1d2340;color:#fff;text-align:center;font-size:28px;letter-spacing:8px}"
                 + "button{background:#3a5bd9;color:#fff;font-weight:600}.g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}"
                 + ".g div{position:relative}.g img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:10px;display:block}"
                 + ".g b{position:absolute;top:4px;right:4px;background:#000b;border-radius:50%;width:28px;height:28px;text-align:center;line-height:28px}"
-                + "#m,#e{opacity:.75}</style><h1>Free My TV</h1>"
+                + "#m,#e{opacity:.75}</style><h1>MinimalOS</h1>"
                 + "<div id=a><p>@CODE@</p><input id=c inputmode=numeric maxlength=4 placeholder=0000><button onclick=go()>OK</button><p id=e></p></div>"
                 + "<div id=b hidden><input id=f type=file accept=image/* multiple hidden><button onclick=\"f.click()\">@PICK@</button>"
                 + "<p id=m></p><div class=g id=g></div><button style=background:#3a3f55 onclick=clr()>@CLEAR@</button></div>"

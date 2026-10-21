@@ -507,7 +507,7 @@ public class SettingsActivity extends Activity {
             // On the left: big symbol, title, description.
             float cx = 500 * k;
             Symbols.draw(getContext(), c, "sparkles", cx, 400 * k, 150 * k, 0xEBFFFFFF);
-            c.drawText("Free My TV", cx, 612 * k, title);
+            c.drawText("MinimalOS", cx, 612 * k, title);
             c.drawText(Ui.tr("Início e tela de descanso da TV", "Your TV's home screen and screensaver"), cx, 660 * k, subtitle);
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
@@ -520,7 +520,7 @@ public class SettingsActivity extends Activity {
         private void drawMain(Canvas c, float seconds) {
             boolean working = busy();
             String busyText = state.optString("busy");
-            String mode = freeActive() ? "Free My TV" : Ui.tr("Original", "Original");
+            String mode = freeActive() ? "MinimalOS" : Ui.tr("Original", "Original");
             String[] labels = {Ui.tr("Início", "Home Screen"), Ui.tr("Apps", "Apps"), Ui.tr("Preferências", "Preferences"),
                     Ui.tr("Tela de Descanso", "Screensaver"), Ui.tr("Ajustes da TV", "TV Settings")};
             String[] values = {working ? "" : mode, "", "", Ui.tr("Ver agora", "Preview"), ""};
@@ -560,8 +560,7 @@ public class SettingsActivity extends Activity {
                 c.drawText(TextUtils.ellipsize(error, new TextPaint(warn), 760 * k, TextUtils.TruncateAt.END).toString(), LIST_X * k + 30 * k, y, warn);
                 y += 46 * k;
             }
-            y = drawComparison(c, y);
-            y = drawRecs(c, y + 22 * k);
+            y = drawRecs(c, y);
             drawNotices(c, y + 34 * k);
         }
 
@@ -603,27 +602,6 @@ public class SettingsActivity extends Activity {
                 rowRect.set(tmp);
             }
             return f;
-        }
-
-        private float drawComparison(Canvas c, float y) {
-            float x = LIST_X * k + 30 * k, colA = LIST_R * k - 220 * k, colB = LIST_R * k - 30 * k;
-            c.drawText(Ui.tr("COMPARAÇÃO", "COMPARISON"), x, y, header);
-            cellValue.setColor(0x73FFFFFF);
-            c.drawText("Original", colA, y, cellValue);
-            c.drawText("Free My TV", colB, y, cellValue);
-            cellValue.setColor(0xD9FFFFFF);
-            JSONObject metrics = state.optJSONObject("metrics");
-            JSONObject a = metrics == null ? null : metrics.optJSONObject(HomeMode.ORIGINAL);
-            JSONObject b = metrics == null ? null : metrics.optJSONObject(HomeMode.FREE);
-            String[][] rows = {{Ui.tr("Botão Início", "Home button"), "homeMs"}, {Ui.tr("Memória livre", "Free memory"), "memAvailableMB"},
-                    {Ui.tr("Memória do Início", "Home screen memory"), "homePssMB"}};
-            for (int i = 0; i < rows.length; i++) {
-                float base = y + (42 + 38 * i) * k;
-                c.drawText(rows[i][0], x, base, cellLabel);
-                c.drawText(metric(a, rows[i][1]), colA, base, cellValue);
-                c.drawText(metric(b, rows[i][1]), colB, base, cellValue);
-            }
-            return y + (42 + 38 * rows.length) * k;
         }
 
         private void drawNotices(Canvas c, float y) {
@@ -787,7 +765,7 @@ public class SettingsActivity extends Activity {
 
         private void drawSetup(Canvas c, float seconds) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
-            c.drawText(Ui.tr("Ligar o Free My TV", "Turn on Free My TV"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
+            c.drawText(Ui.tr("Ligar o MinimalOS", "Turn on MinimalOS"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             float y = (LIST_TOP + 10) * k;
             for (int i = 0; i < setupText.length; i++) {
                 c.save();
@@ -807,7 +785,7 @@ public class SettingsActivity extends Activity {
         private void drawChoice(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Início", "Home Screen"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
-            String[][] options = {{"Free My TV", Ui.tr("Sem anúncios, com a tela de descanso nova", "No ads, with the new screensaver")},
+            String[][] options = {{"MinimalOS", Ui.tr("Sem anúncios, com a tela de descanso nova", "No ads, with the new screensaver")},
                     {"Original", Ui.tr("O Início de fábrica da TV", "The TV's factory home screen")}};
             int current = freeActive() ? 0 : 1;
             for (int i = 0; i < 2; i++) {
@@ -825,8 +803,8 @@ public class SettingsActivity extends Activity {
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
             c.drawText(HomeMode.isFireOs()
-                    ? Ui.tr("No Fire TV, o botão Início abre o Free My TV.",
-                            "On Fire TV, the Home button opens Free My TV.")
+                    ? Ui.tr("No Fire TV, o botão Início abre o MinimalOS.",
+                            "On Fire TV, the Home button opens MinimalOS.")
                     : Ui.tr("A troca leva uns segundos e a tela pisca nas medições.",
                             "Switching takes a few seconds; the screen blinks while it measures."), LIST_X * k + 30 * k,
                     (LIST_TOP + 20 + 2 * (CHOICE_H + ROW_GAP) + 40) * k, hint);
@@ -862,9 +840,9 @@ public class SettingsActivity extends Activity {
 
         private static String versionName(Context c) {
             try {
-                return "Free My TV " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+                return "MinimalOS " + c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
             } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-                return "Free My TV";
+                return "MinimalOS";
             }
         }
 

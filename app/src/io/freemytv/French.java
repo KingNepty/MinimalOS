@@ -16,8 +16,8 @@ final class French {
     static {
         T.put("prices from ",
                 "prix de ");
-        T.put("Free My TV's home screen ran into a problem.\nGoing back to the TV's original home screen…",
-                "L'écran d'accueil de Free My TV a rencontré un problème.\nRetour à l'écran d'accueil d'origine de la TV…");
+        T.put("MinimalOS's home screen ran into a problem.\nGoing back to the TV's original home screen…",
+                "L'écran d'accueil de MinimalOS a rencontré un problème.\nRetour à l'écran d'accueil d'origine de la TV…");
         T.put("Live TV",
                 "TV en direct");
         T.put("All Apps",
@@ -32,16 +32,16 @@ final class French {
                 "Dollar");
         T.put("One-time step, from a computer: ",
                 "Étape à faire une fois, depuis un ordinateur : ");
-        T.put("Free My TV is on: the Home button opens Free My TV.",
-                "Free My TV est activé : le bouton Accueil ouvre Free My TV.");
-        T.put("Couldn't turn on Free My TV: ",
-                "Impossible d'activer Free My TV : ");
+        T.put("MinimalOS is on: the Home button opens MinimalOS.",
+                "MinimalOS est activé : le bouton Accueil ouvre MinimalOS.");
+        T.put("Couldn't turn on MinimalOS: ",
+                "Impossible d'activer MinimalOS : ");
         T.put("Original mode: Amazon's home screen is back.",
                 "Mode d'origine : l'écran d'accueil d'Amazon est de retour.");
         T.put("Couldn't go back to the original: ",
                 "Impossible de revenir à l'original : ");
-        T.put("Free My TV's home screen is off on the TV. From a computer: ",
-                "L'accueil de Free My TV est désactivé sur la TV. Depuis un ordinateur : ");
+        T.put("MinimalOS's home screen is off on the TV. From a computer: ",
+                "L'accueil de MinimalOS est désactivé sur la TV. Depuis un ordinateur : ");
         T.put("Measuring the original home screen…",
                 "Mesure de l'écran d'accueil d'origine…");
         T.put("Switching the home screen and screensaver…",
@@ -50,8 +50,8 @@ final class French {
                 "Android n'a pas accepté le nouvel écran d'accueil");
         T.put("Turning off apps (",
                 "Désactivation des applis (");
-        T.put("Measuring Free My TV…",
-                "Mesure de Free My TV…");
+        T.put("Measuring MinimalOS…",
+                "Mesure de MinimalOS…");
         T.put("Turning the apps back on…",
                 "Réactivation des applis…");
         T.put("Turning apps back on (",
@@ -64,22 +64,22 @@ final class French {
                 "l'écran d'accueil d'origine");
         T.put("Original mode, but I couldn't turn back on: ",
                 "Mode d'origine, mais je n'ai pas pu réactiver : ");
-        T.put("Free My TV's home screen crashed 3 times in a row; I switched back to Amazon's.",
-                "L'accueil de Free My TV a planté 3 fois de suite ; je suis revenu à celui d'Amazon.");
-        T.put("Free My TV's home screen crashed 3 times in a row; I switched back to the original one.",
-                "L'accueil de Free My TV a planté 3 fois de suite ; je suis revenu à celui d'origine.");
+        T.put("MinimalOS's home screen crashed 3 times in a row; I switched back to Amazon's.",
+                "L'accueil de MinimalOS a planté 3 fois de suite ; je suis revenu à celui d'Amazon.");
+        T.put("MinimalOS's home screen crashed 3 times in a row; I switched back to the original one.",
+                "L'accueil de MinimalOS a planté 3 fois de suite ; je suis revenu à celui d'origine.");
         T.put("the home screen",
                 "l'écran d'accueil");
         T.put("the screensaver",
                 "l'économiseur d'écran");
-        T.put("Couldn't check Free My TV: ",
-                "Impossible de vérifier Free My TV : ");
+        T.put("Couldn't check MinimalOS: ",
+                "Impossible de vérifier MinimalOS : ");
         T.put("The TV update turned back on ",
                 "La mise à jour de la TV a réactivé ");
         T.put("Turned off what was missing: ",
                 "J'ai désactivé ce qui manquait : ");
-        T.put("The TV was updated; Free My TV is still on.",
-                "La TV a été mise à jour ; Free My TV est toujours activé.");
+        T.put("The TV was updated; MinimalOS is still on.",
+                "La TV a été mise à jour ; MinimalOS est toujours activé.");
         T.put("Connecting…",
                 "Connexion…");
         T.put("Accept “Allow USB debugging?” on the TV (tick “Always allow”).",
@@ -148,8 +148,8 @@ final class French {
                 "Sans pubs, avec le nouvel économiseur d'écran");
         T.put("The TV's factory home screen",
                 "L'écran d'accueil d'origine de la TV");
-        T.put("On Fire TV, the Home button opens Free My TV.",
-                "Sur Fire TV, le bouton Accueil ouvre Free My TV.");
+        T.put("On Fire TV, the Home button opens MinimalOS.",
+                "Sur Fire TV, le bouton Accueil ouvre MinimalOS.");
         T.put("Switching takes a few seconds; the screen blinks while it measures.",
                 "Le changement prend quelques secondes ; l'écran clignote pendant les mesures.");
         T.put("now",
@@ -181,7 +181,7 @@ final class French {
         T.put("Searching…", "Recherche…");
         T.put("No city found.", "Aucune ville trouvée.");
         T.put("Couldn't reach the city search.", "Recherche impossible.");
-        T.put("Turn on Free My TV", "Activer Free My TV");
+        T.put("Turn on MinimalOS", "Activer MinimalOS");
         T.put("On your computer, connect to this TV:", "Sur votre ordinateur, connectez-vous à cette TV :");
         T.put("Then run this, once:", "Puis lancez ceci, une seule fois :");
         T.put("This screen goes on by itself when it works.", "Cet écran continue tout seul quand ça marche.");
