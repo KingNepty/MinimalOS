@@ -211,6 +211,15 @@ final class French {
         T.put("GOOD EVENING", "BONSOIR");
         T.put("Home Style", "Style d'accueil");
         T.put("ALL APPS", "TOUTES LES APPLIS");
+        T.put("Open", "Ouvrir");
+        T.put("Remove from favorites", "Retirer des favoris");
+        T.put("Move earlier", "Déplacer avant");
+        T.put("Move later", "Déplacer après");
+        T.put("Add to favorites", "Ajouter aux favoris");
+        T.put("Favorites are full", "Favoris complets");
+        T.put("Hide app", "Masquer l'appli");
+        T.put("App info", "Infos de l'appli");
+        T.put("Uninstall", "Désinstaller");
         T.put("Good morning", "Bonjour");
         T.put("Good afternoon", "Bon après-midi");
         T.put("Good evening", "Bonsoir");

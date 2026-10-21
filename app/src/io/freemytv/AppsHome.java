@@ -224,6 +224,168 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private final Matrix tiltMatrix = new Matrix();
     private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    // MARK: - App options menu (hold OK, or the Menu button, on an app)
+
+    private final Spring menuAnim = new Spring(0.34f, 0.9f, 0);
+    private boolean menuOpen;
+    private int menuIndex;
+    private final List<String[]> menuItems = new ArrayList<>();   // {label, id}
+    private String menuTitle = "";
+
+    private void openMenu() {
+        if (zone != GRID || index >= apps.size()) return;
+        HomeApps.Item app = apps.get(index);
+        if (app.kind != HomeApps.APP || app.pkg == null) return;
+        Context c = getContext();
+        menuItems.clear();
+        menuItems.add(new String[] {Ui.tr("Abrir", "Open"), "open"});
+        if (index < fav) {
+            menuItems.add(new String[] {Ui.tr("Tirar dos favoritos", "Remove from favorites"), "fav_off"});
+            if (index > 0) menuItems.add(new String[] {Ui.tr("Mover para antes", "Move earlier"), "left"});
+            if (index < fav - 1) menuItems.add(new String[] {Ui.tr("Mover para depois", "Move later"), "right"});
+        } else if (fav < HomeApps.maxShelf()) {
+            menuItems.add(new String[] {Ui.tr("Pôr nos favoritos", "Add to favorites"), "fav_on"});
+        } else {
+            menuItems.add(new String[] {Ui.tr("Favoritos cheios", "Favorites are full"), "none"});
+        }
+        menuItems.add(new String[] {Ui.tr("Ocultar app", "Hide app"), "hide"});
+        menuItems.add(new String[] {Ui.tr("Informações do app", "App info"), "info"});
+        try {
+            android.content.pm.ApplicationInfo ai = c.getPackageManager().getApplicationInfo(app.pkg, 0);
+            boolean system = (ai.flags & (android.content.pm.ApplicationInfo.FLAG_SYSTEM
+                    | android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
+            if (!system && !app.pkg.equals(c.getPackageName())) {
+                menuItems.add(new String[] {Ui.tr("Desinstalar", "Uninstall"), "uninstall"});
+            }
+        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+        }
+        menuTitle = app.label;
+        menuIndex = 0;
+        menuOpen = true;
+        menuAnim.target = 1;
+        click.open();
+        invalidate();
+    }
+
+    private void closeMenu() {
+        menuOpen = false;
+        menuAnim.target = 0;
+        invalidate();
+    }
+
+    private void runMenuAction(String id) {
+        Context c = getContext().getApplicationContext();
+        HomeApps.Item app = apps.get(index);
+        String pkg = app.pkg;
+        java.util.List<String> shelf = new ArrayList<>(HomeApps.shelfPackages(c));
+        switch (id) {
+            case "open":
+                closeMenu();
+                activate();
+                return;
+            case "fav_on":
+                if (!shelf.contains(pkg) && shelf.size() < HomeApps.maxShelf()) shelf.add(pkg);
+                HomeApps.setShelfChoice(c, shelf);
+                break;
+            case "fav_off":
+                shelf.remove(pkg);
+                HomeApps.setShelfChoice(c, shelf);
+                break;
+            case "left":
+            case "right": {
+                int at = shelf.indexOf(pkg), to = at + (id.equals("left") ? -1 : 1);
+                if (at >= 0 && to >= 0 && to < shelf.size()) java.util.Collections.swap(shelf, at, to);
+                HomeApps.setShelfChoice(c, shelf);
+                break;
+            }
+            case "hide": {
+                java.util.Set<String> hidden = HomeApps.hiddenApps(c);
+                hidden.add(pkg);
+                HomeApps.setHiddenApps(c, hidden);
+                if (shelf.remove(pkg)) HomeApps.setShelfChoice(c, shelf);
+                break;
+            }
+            case "info":
+                closeMenu();
+                try {
+                    activity.startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", pkg, null)));
+                } catch (RuntimeException e) {
+                    AppLog.w("app info: " + e.getMessage());
+                }
+                return;
+            case "uninstall":
+                closeMenu();
+                try {
+                    activity.startActivity(new Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + pkg)));
+                } catch (RuntimeException e) {
+                    AppLog.w("uninstall: " + e.getMessage());
+                }
+                return;
+            default:
+                return;
+        }
+        closeMenu();
+        reload();
+    }
+
+    private boolean menuKey(KeyEvent e, boolean down, int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_UP:
+                if (down && menuIndex > 0) menuIndex--;
+                invalidate();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (down && menuIndex < menuItems.size() - 1) menuIndex++;
+                invalidate();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                return true;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (down) {
+                    if (e.getRepeatCount() == 0) okDown = true;
+                } else {
+                    if (okDown && !e.isCanceled() && menuIndex < menuItems.size()) {
+                        click.open();
+                        runMenuAction(menuItems.get(menuIndex)[1]);
+                    }
+                    okDown = false;
+                }
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_MENU:
+                if (!down) closeMenu();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void drawMenu(Canvas c) {
+        float f = Ui.clamp(menuAnim.value);
+        fill.setColor(Ui.alpha(0xFF000000, 0.72f * f));
+        c.drawRect(0, 0, w, h, fill);
+        float cx = w / 2f, top = 210 * k;
+        sheetTitle.setAlpha(Math.round(255 * f));
+        c.drawText(TextUtils.ellipsize(menuTitle, new android.text.TextPaint(sheetTitle), 900 * k, TextUtils.TruncateAt.END).toString(),
+                cx, top, sheetTitle);
+        float rowH = 84 * k, width = 760 * k;
+        for (int i = 0; i < menuItems.size(); i++) {
+            float y = top + 50 * k + i * (rowH + 10 * k);
+            tmp.set(cx - width / 2, y, cx + width / 2, y + rowH);
+            boolean on = i == menuIndex;
+            String id = menuItems.get(i)[1];
+            fill.setColor(Ui.alpha(on ? 0xFFFFFFFF : 0x2EFFFFFF, f));
+            c.drawRoundRect(tmp, 26 * k, 26 * k, fill);
+            int ink = on ? (id.equals("uninstall") ? 0xFFD70015 : INK) : (id.equals("uninstall") ? 0xFFFF6961 : id.equals("none") ? 0x80FFFFFF : 0xFFFFFFFF);
+            sheetRow.setColor(Ui.alpha(ink, f));
+            c.drawText(menuItems.get(i)[0], tmp.left + 40 * k, tmp.centerY() + Ui.halfCap(sheetRow), sheetRow);
+        }
+    }
+
     private void kick(int dx, int dy) {
         if (dx == 0 && dy == 0) return;
         tiltY.value = 9f * dx;
@@ -472,7 +634,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !tiltX.settled() || !tiltY.settled();
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled();
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -492,6 +654,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         sheet.step(dt);
         imgFade.step(dt);
         tiltX.step(dt);
+        menuAnim.step(dt);
         tiltY.step(dt);
         for (int i = 0; i < pop.length; i++) {
             pop[i].target = zone == GRID && i == index ? 1 : 0;
@@ -507,6 +670,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         drawName(c);
         drawGrid(c);
         if (sheet.value > 0.01f) drawSheet(c);
+        if (menuAnim.value > 0.01f) drawMenu(c);
     }
 
     private void drawBackground(Canvas c) {
@@ -866,8 +1030,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     boolean onKey(KeyEvent e) {
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         int code = e.getKeyCode();
+        if (menuOpen) return menuKey(e, down, code);
         if (sheetOpen) return sheetKey(e, down, code);
         switch (code) {
+            case KeyEvent.KEYCODE_MENU:
+                if (down && e.getRepeatCount() == 0) openMenu();
+                return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 if (down) move(-1, 0);
                 return true;
@@ -885,7 +1053,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
                 // Opens on release, and only if the press happened here.
                 if (down) {
-                    if (e.getRepeatCount() == 0) okDown = true;
+                    if (e.getRepeatCount() == 0) {
+                        okDown = true;
+                    } else if (okDown && e.getRepeatCount() == 1 && zone == GRID) {
+                        okDown = false;   // held: the options menu, not the app
+                        openMenu();
+                    }
                 } else {
                     if (okDown && !e.isCanceled()) activate();
                     okDown = false;
