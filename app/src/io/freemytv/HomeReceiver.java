@@ -12,6 +12,13 @@ public class HomeReceiver extends BroadcastReceiver {
             HomeMode.bootCheck(context);
         } else if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             HomeMode.verify(context);   // app updated: complete Free My TV mode if something is missing
+            // And get back to our home screen (Android may refuse a start from the background; on Fire OS the
+            // accessibility service does the same when it comes back, see HomeKeyService).
+            try {
+                context.startActivity(new Intent(context, HomeActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (RuntimeException e) {
+                AppLog.w("reopen after update: " + e.getMessage());
+            }
         }
     }
 }

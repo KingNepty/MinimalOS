@@ -41,6 +41,23 @@ public class HomeKeyService extends AccessibilityService {
     @Override protected void onServiceConnected() {
         instance = this;
         HomeMode.fireService(this, true);
+        reopenAfterUpdate();
+    }
+
+    /**
+     * After an update the app was stopped by the installer and the TV is left on the installer or Amazon's home screen:
+     * when this service comes back on a different version than last time, open our home screen right away.
+     */
+    private void reopenAfterUpdate() {
+        try {
+            long now = getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode();
+            android.content.SharedPreferences p = getSharedPreferences("version", MODE_PRIVATE);
+            long before = p.getLong("code", 0);
+            p.edit().putLong("code", now).apply();
+            if (before != 0 && before != now) openHome(this);
+        } catch (android.content.pm.PackageManager.NameNotFoundException | RuntimeException e) {
+            AppLog.w("reopen after update: " + e.getMessage());
+        }
     }
 
     @Override public boolean onUnbind(Intent intent) {
