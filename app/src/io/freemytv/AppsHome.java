@@ -113,6 +113,40 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private String[] capA, capB;   // what each shows: the title (and season) and where to watch it; null for your own photos
     private static final int IMG_W = 1280, IMG_H = 720;
     private Paint capTitle, capSub;
+
+    // The splash: when the home screen first comes up after the app starts (a boot, an update), "MinimalOS" fades in on
+    // black, fades out, and the black lifts. It plays once per start, not on every Home press.
+    private static boolean splashDone;
+    private long splashAt;
+    private Paint splashPaint;
+    private static final long SPLASH_MS = 2500;
+
+    private static float smooth(float x) {
+        x = Math.max(0, Math.min(1, x));
+        return x * x * (3 - 2 * x);
+    }
+
+    private void drawSplash(Canvas c) {
+        long up = SystemClock.uptimeMillis();
+        if (splashAt == 0) splashAt = up;
+        long t = up - splashAt;
+        if (t >= SPLASH_MS) {
+            splashDone = true;
+            return;
+        }
+        float cover = t < 1800 ? 1f : 1f - smooth((t - 1800) / 700f);
+        float text = t < 700 ? smooth(t / 700f) : t < 1300 ? 1f : 1f - smooth((t - 1300) / 600f);
+        fill.setColor(Ui.alpha(0xFF000000, cover));
+        c.drawRect(0, 0, w, h, fill);
+        if (text > 0.01f) {
+            splashPaint.setAlpha(Math.round(255 * text));
+            float scale = 0.97f + 0.03f * smooth(t / 1300f);
+            c.save();
+            c.scale(scale, scale, w / 2f, h / 2f);
+            c.drawText("MinimalOS", w / 2f, h / 2f + Ui.halfCap(splashPaint), splashPaint);
+            c.restore();
+        }
+    }
     private final Spring imgFade = new Spring(0.9f, 1f, 0);
     // The picture is brighter when no app is hovered (a button or the All apps header is focused) and a bit darker while an
     // app is, so its name and the tiles stay easy to read.
@@ -626,6 +660,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         datePaint = Ui.text(Ui.medium, 27 * k, 0xB3FFFFFF);
         datePaint.setLetterSpacing(0.02f);
         weatherPaint = Ui.text(Ui.semibold, 27 * k, 0xCCFFFFFF);
+        splashPaint = Ui.text(Ui.thin, 118 * k, 0xFFFFFFFF);
+        splashPaint.setTextAlign(Paint.Align.CENTER);
+        splashPaint.setLetterSpacing(0.05f);
         capTitle = Ui.text(Ui.medium, 40 * k, 0xF2FFFFFF);
         capSub = Ui.text(Ui.regular, 29 * k, 0xB3FFFFFF);
         capTitle.setShadowLayer(10 * k, 0, 2 * k, 0xAA000000);
@@ -666,7 +703,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled();
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled() || !splashDone;
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -705,6 +742,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         drawGrid(c);
         if (sheet.value > 0.01f) drawSheet(c);
         if (menuAnim.value > 0.01f) drawMenu(c);
+        if (!splashDone) drawSplash(c);
     }
 
     /** The title of the picture on screen (with its season) and where to watch it, in the empty space under the weather. */
