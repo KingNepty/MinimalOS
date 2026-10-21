@@ -109,8 +109,15 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     // Pictures/FreeMyTV, and the movie and show art the app already downloaded).
     private String bgMode = "dynamic", bgSource = "both";
     private int staticColor = 0xFF3A5BD9;
-    private Bitmap bgA, bgB;   // the picture on screen and the one fading in (480x270, darkened, already baked)
+    private Bitmap bgA, bgB;   // the picture on screen and the one fading in (1280x720, darkened, already baked)
+    private String[] capA, capB;   // what each shows: the title (and season) and where to watch it; null for your own photos
+    private static final int IMG_W = 1280, IMG_H = 720;
+    private Paint capTitle, capSub;
     private final Spring imgFade = new Spring(0.9f, 1f, 0);
+    // The picture is brighter when no app is hovered (a button or the All apps header is focused) and a bit darker while an
+    // app is, so its name and the tiles stay easy to read.
+    private final Spring dim = new Spring(0.5f, 1f, 0.5f);
+    private final Paint dimPaint = new Paint();
     private static final ExecutorService IMAGES = Executors.newSingleThreadExecutor();
     private boolean imgLoading;
     private int imgTick, imgPick = (int) (System.currentTimeMillis() % 1000);
@@ -126,6 +133,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (!source.equals(bgSource)) {
             bgSource = source;
             bgA = bgB = null;
+            capA = capB = null;
         }
         if (!mode.equals(bgMode)) {
             bgMode = mode;
@@ -143,7 +151,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         final Context c = getContext().getApplicationContext();
         IMAGES.execute(() -> {
             Bitmap baked = null;
+            String[] caption = null;
             try {
+                java.util.Map<java.io.File, String[]> captions = new java.util.HashMap<>();
                 java.util.List<java.io.File> files = new ArrayList<>();
                 java.io.File dir = c.getExternalFilesDir("wallpapers");
                 java.util.List<java.io.File> mine = new ArrayList<>();
@@ -165,24 +175,32 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                     Recs recs = Recs.get(c);
                     for (Recs.Pick p : recs.showcase()) {
                         java.io.File f = recs.readyImage(p);
-                        if (f != null) files.add(f);
+                        if (f != null) {
+                            files.add(f);
+                            captions.put(f, Recs.caption(p));
+                        }
                     }
                 }
                 java.util.Collections.sort(files);
                 for (int tries = 0; tries < files.size() && baked == null; tries++) {
-                    baked = bake(files.get(Math.floorMod(imgPick++, files.size())));
+                    java.io.File f = files.get(Math.floorMod(imgPick++, files.size()));
+                    baked = bake(f);
+                    if (baked != null) caption = captions.get(f);
                 }
             } catch (RuntimeException e) {
                 AppLog.w("background image: " + e.getMessage());
             }
             final Bitmap result = baked;
+            final String[] resultCaption = caption;
             handler.post(() -> {
                 imgLoading = false;
                 if (result == null || !bgMode.equals("image")) return;
                 if (bgA == null) {
                     bgA = result;
+                    capA = resultCaption;
                 } else {
                     bgB = result;
+                    capB = resultCaption;
                     imgFade.value = 0;
                     imgFade.velocity = 0;
                     imgFade.target = 1;
@@ -192,28 +210,28 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         });
     }
 
-    /** The photo cropped to the screen's shape at 480x270, darkened so the text and the tiles stay readable. */
+    /** The photo cropped to the screen's shape at 1280x720, darkened so the text and the tiles stay readable. */
     private static Bitmap bake(java.io.File f) {
         android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
         o.inJustDecodeBounds = true;
         android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
         if (o.outWidth <= 0 || o.outHeight <= 0) return null;
         o.inJustDecodeBounds = false;
-        o.inSampleSize = Integer.highestOneBit(Math.max(1, Math.min(o.outWidth / 960, o.outHeight / 540)));
+        o.inSampleSize = Integer.highestOneBit(Math.max(1, Math.min(o.outWidth / IMG_W, o.outHeight / IMG_H)));
         Bitmap src = android.graphics.BitmapFactory.decodeFile(f.getPath(), o);
         if (src == null) return null;
-        Bitmap out = Bitmap.createBitmap(BG_W, BG_H, Bitmap.Config.ARGB_8888);
+        Bitmap out = Bitmap.createBitmap(IMG_W, IMG_H, Bitmap.Config.ARGB_8888);
         Canvas cv = new Canvas(out);
-        float s = Math.max(BG_W / (float) src.getWidth(), BG_H / (float) src.getHeight());
+        float s = Math.max(IMG_W / (float) src.getWidth(), IMG_H / (float) src.getHeight());
         float dw = src.getWidth() * s, dh = src.getHeight() * s;
-        cv.drawBitmap(src, null, new RectF((BG_W - dw) / 2, (BG_H - dh) / 2, (BG_W + dw) / 2, (BG_H + dh) / 2),
-                new Paint(Paint.FILTER_BITMAP_FLAG));
+        cv.drawBitmap(src, null, new RectF((IMG_W - dw) / 2, (IMG_H - dh) / 2, (IMG_W + dw) / 2, (IMG_H + dh) / 2),
+                new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG));
         src.recycle();
-        cv.drawColor(0x73000000);
+        cv.drawColor(0x26000000);
         Paint edge = new Paint();
-        edge.setShader(new LinearGradient(0, 0, BG_W, 0, new int[] {0x00000000, 0x00000000, 0xB8000000},
-                new float[] {0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
-        cv.drawRect(0, 0, BG_W, BG_H, edge);
+        edge.setShader(new LinearGradient(0, 0, IMG_W, 0, new int[] {0x00000000, 0x00000000, 0x80000000},
+                new float[] {0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        cv.drawRect(0, 0, IMG_W, IMG_H, edge);
         return out;
     }
 
@@ -608,6 +626,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         datePaint = Ui.text(Ui.medium, 27 * k, 0xB3FFFFFF);
         datePaint.setLetterSpacing(0.02f);
         weatherPaint = Ui.text(Ui.semibold, 27 * k, 0xCCFFFFFF);
+        capTitle = Ui.text(Ui.medium, 40 * k, 0xF2FFFFFF);
+        capSub = Ui.text(Ui.regular, 29 * k, 0xB3FFFFFF);
+        capTitle.setShadowLayer(10 * k, 0, 2 * k, 0xAA000000);
+        capSub.setShadowLayer(8 * k, 0, 2 * k, 0xAA000000);
         namePaint = Ui.text(Ui.light, 66 * k, 0xFFFFFFFF);
         pillText = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
         sheetTitle = Ui.text(Ui.displaySemibold, 40 * k, 0xFFFFFFFF);
@@ -644,7 +666,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled();
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled();
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -663,6 +685,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         nameIn.step(dt);
         sheet.step(dt);
         imgFade.step(dt);
+        dim.target = zone == GRID ? 1 : 0;
+        dim.step(dt);
         tiltX.step(dt);
         menuAnim.step(dt);
         tiltY.step(dt);
@@ -683,17 +707,38 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (menuAnim.value > 0.01f) drawMenu(c);
     }
 
+    /** The title of the picture on screen (with its season) and where to watch it, in the empty space under the weather. */
+    private void drawCaption(Canvas c, String[] cap, float alpha) {
+        if (cap == null || alpha <= 0.01f || capTitle == null) return;
+        float x = MARGIN * k;
+        capTitle.setAlpha(Math.round(255 * alpha * 0.95f));
+        c.drawText(TextUtils.ellipsize(cap[0], new android.text.TextPaint(capTitle), 1200 * k, TextUtils.TruncateAt.END).toString(),
+                x, 430 * k, capTitle);
+        if (!cap[1].isEmpty()) {
+            capSub.setAlpha(Math.round(255 * alpha * 0.75f));
+            c.drawText(cap[1], x, 478 * k, capSub);
+        }
+    }
+
     private void drawBackground(Canvas c) {
         if (bgMode.equals("image") && bgA != null) {
             c.drawBitmap(bgA, null, screenRect, backgroundPaint);
+            float f = bgB == null ? 0 : Ui.clamp(imgFade.value);
             if (bgB != null) {
-                float f = Ui.clamp(imgFade.value);
                 backgroundPaint.setAlpha(Math.round(255 * f));
                 c.drawBitmap(bgB, null, screenRect, backgroundPaint);
                 backgroundPaint.setAlpha(255);
+            }
+            dimPaint.setColor(Ui.alpha(0xFF000000, 0.30f * Ui.clamp(dim.value)));
+            c.drawRect(0, 0, w, h, dimPaint);
+            drawCaption(c, capA, 1 - f);
+            if (bgB != null) {
+                drawCaption(c, capB, f);
                 if (f >= 0.995f) {
                     bgA = bgB;
+                    capA = capB;
                     bgB = null;
+                    capB = null;
                 }
             }
             return;

@@ -45,6 +45,7 @@ final class Recs {
         String kind;            // "movie" or "tv"
         String title, backdrop, meta = "", app, pkg;
         boolean detailed;
+        int season;             // a show: the season that is on now (0 for a movie)
         // kind "app": the card is an app of the TV (no TMDB image): its art, and the colors behind it.
         android.graphics.Bitmap art;
         boolean artIsLogo;
@@ -57,7 +58,7 @@ final class Recs {
     private static final String IMAGES = "https://image.tmdb.org/t/p/original";
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 5;
+    private static final int CACHE_VERSION = 6;
     /** How many titles in the list, and how many of the most popular on each of the TV's services go into it. */
     private static final int MAX_PICKS = 40, PER_SERVICE = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
@@ -619,6 +620,9 @@ final class Recs {
             else if (minutes > 0) parts.add(minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min");
         } else {
             int seasons = o.optInt("number_of_seasons");
+            JSONObject last = o.optJSONObject("last_episode_to_air");
+            int current = last == null ? 0 : last.optInt("season_number");
+            p.season = current > 0 ? current : seasons;
             if (seasons > 0 && Ui.en) parts.add(seasons == 1 ? "1 season" : seasons + " seasons");
             else if (seasons > 0 && Ui.fr) parts.add(seasons == 1 ? "1 saison" : seasons + " saisons");
             else if (seasons > 0) parts.add(seasons == 1 ? "1 temporada" : seasons + " temporadas");
@@ -636,6 +640,17 @@ final class Recs {
         if (p.app != null) parts.add(SERVICE_NAME.get(p.app));
         p.meta = String.join(" · ", parts);
         p.detailed = true;
+    }
+
+    /** For a picture of a title: its name (with the season for a show) and where it is on now, e.g. "Bleach · Season 2", "Now on Netflix". */
+    static String[] caption(Pick p) {
+        String title = p.title == null ? "" : p.title;
+        if ("tv".equals(p.kind) && p.season > 0) {
+            title += " · " + (Ui.en ? "Season " : Ui.fr ? "Saison " : "Temporada ") + p.season;
+        }
+        String name = p.app == null ? null : SERVICE_NAME.get(p.app);
+        String sub = name == null ? "" : (Ui.en ? "Now on " : Ui.fr ? "Maintenant sur " : "Agora em ") + name;
+        return new String[] {title, sub};
     }
 
     /** TV genres that TMDB returns in English even in pt-BR. */
@@ -801,7 +816,7 @@ final class Recs {
             for (Pick p : picks) {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop)
                         .put("meta", p.meta).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
-                        .put("detailed", p.detailed));
+                        .put("detailed", p.detailed).put("season", p.season));
             }
             cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("lang", listLang)
@@ -824,6 +839,7 @@ final class Recs {
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");
+            p.season = o.optInt("season");
             out.add(p);
         }
         return out;
