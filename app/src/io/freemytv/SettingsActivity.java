@@ -137,7 +137,8 @@ public class SettingsActivity extends Activity {
     }
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
-        private static final int MAIN = 0, HOME_CHOICE = 1, APPS = 2, PREFS = 3, SHELF = 4, HIDDEN = 5, CITY = 6, SETUP = 7;
+        private static final int MAIN = 0, HOME_CHOICE = 1, APPS = 2, PREFS = 3, SHELF = 4, HIDDEN = 5, CITY = 6, SETUP = 7,
+                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10;
         private static final int VISIBLE = 10;   // rows of a list on screen at once
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104,
                 MAIN_H = 62, MAIN_GAP = 8;
@@ -150,6 +151,7 @@ public class SettingsActivity extends Activity {
             String value = "";
             boolean chevron, check;
             int number;
+            String desc = "", symbol;   // what the row does (shown on the left while focused), and its icon
             Row(String label, String tag) {
                 this.label = label;
                 this.tag = tag;
@@ -282,7 +284,12 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean isList(int s) {
-            return s == APPS || s == PREFS || s == SHELF || s == HIDDEN || s == CITY;
+            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY;
+        }
+
+        /** The Preferences menu and the three screens under it. */
+        private static boolean isPrefs(int s) {
+            return s == PREFS || s == PREFS_HOME || s == PREFS_BG || s == PREFS_REGION;
         }
 
         private int rowCount() {
@@ -317,6 +324,9 @@ public class SettingsActivity extends Activity {
             switch (screen) {
                 case APPS: return Ui.tr("Apps", "Apps");
                 case PREFS: return Ui.tr("Preferências", "Preferences");
+                case PREFS_HOME: return Ui.tr("Layout do Início", "Home Layout");
+                case PREFS_BG: return Ui.tr("Fundo", "Background");
+                case PREFS_REGION: return Ui.tr("Região e idioma", "Region & Language");
                 case SHELF: return Ui.tr("Apps do Início", "Shelf Apps");
                 case HIDDEN: return Ui.tr("Apps ocultos", "Hidden Apps");
                 case CITY: return Ui.tr("Cidade", "City");
@@ -364,35 +374,74 @@ public class SettingsActivity extends Activity {
                     break;
                 }
                 case PREFS: {
-                    Row city = new Row(Ui.tr("Cidade", "City"), "city");
-                    city.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
-                    city.chevron = true;
+                    Row home = new Row(Ui.tr("Layout do Início", "Home Layout"), "g_home");
+                    home.symbol = "home";
+                    home.value = (Prefs.homeStyle().equals("foryou") ? Ui.tr("Para você", "For You") : "Apps") + " · " + Prefs.shelfSize();
+                    home.desc = Ui.tr("O estilo do Início e quantos apps por linha.", "The home style and how many apps per row.");
+                    Row bg = new Row(Ui.tr("Fundo", "Background"), "g_bg");
+                    bg.symbol = "sparkles";
+                    bg.value = bgModeName(Prefs.bgMode());
+                    bg.desc = Ui.tr("Cor dinâmica, uma cor fixa ou imagens (inclusive as do seu celular).",
+                            "Dynamic color, one fixed color, or pictures (including ones from your phone).");
+                    Row region = new Row(Ui.tr("Região e idioma", "Region & Language"), "g_region");
+                    region.symbol = "tv";
+                    region.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
+                    region.desc = Ui.tr("Cidade (clima), idioma e temperatura.", "City (weather), language and temperature.");
+                    for (Row r : new Row[] {home, bg, region}) {
+                        r.chevron = true;
+                        rows.add(r);
+                    }
+                    break;
+                }
+                case PREFS_HOME: {
                     Row style = new Row(Ui.tr("Estilo do Início", "Home Style"), "style");
                     style.value = Prefs.homeStyle().equals("foryou") ? Ui.tr("Para você", "For You") : Ui.tr("Apps", "Apps");
-                    Row bg = new Row(Ui.tr("Fundo", "Background"), "bg");
-                    bg.value = bgModeName(Prefs.bgMode());
-                    Row bgColor = null;
-                    if (Prefs.bgMode().equals("static")) {
-                        bgColor = new Row(Ui.tr("Cor do fundo", "Background Color"), "bgcolor");
-                        bgColor.value = bgColorName(Prefs.bgColor());
-                    }
-                    Row language = new Row(Ui.tr("Idioma", "Language"), "lang");
-                    language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
-                    Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
-                    units.value = unitsName(oneOf(Prefs.temperature(), UNITS));
+                    style.desc = Ui.tr("Apps: a grade de apps. Para você: sugestões de filmes e séries.",
+                            "Apps: the app grid. For You: movie and show picks.");
                     Row size = new Row(Ui.tr("Apps por linha", "Shelf Size"), "shelf");
                     size.value = String.valueOf(Prefs.shelfSize());
-                    rows.add(city);
+                    size.desc = Ui.tr("Quantos apps cabem em cada linha (de 4 a 12).", "How many apps fit in each row (4 to 12).");
                     rows.add(style);
+                    rows.add(size);
+                    break;
+                }
+                case PREFS_BG: {
+                    Row bg = new Row(Ui.tr("Fundo", "Background"), "bg");
+                    bg.value = bgModeName(Prefs.bgMode());
+                    bg.desc = Ui.tr("Dinâmico: a cor do app em foco. Cor: uma cor fixa. Imagens: fotos que giram.",
+                            "Dynamic: the focused app's color. Color: one fixed color. Images: rotating pictures.");
                     rows.add(bg);
-                    if (bgColor != null) rows.add(bgColor);
+                    if (Prefs.bgMode().equals("static")) {
+                        Row bgColor = new Row(Ui.tr("Cor do fundo", "Background Color"), "bgcolor");
+                        bgColor.value = bgColorName(Prefs.bgColor());
+                        bgColor.desc = Ui.tr("A cor fixa do fundo.", "The fixed background color.");
+                        rows.add(bgColor);
+                    }
                     if (Prefs.bgMode().equals("image")) {
+                        Row source = new Row(Ui.tr("Origem das imagens", "Image Source"), "bgsource");
+                        source.value = bgSourceName(Prefs.bgSource());
+                        source.desc = Ui.tr("Suas fotos, as capas de filmes e séries, ou as duas.", "Your photos, movie and show art, or both.");
+                        rows.add(source);
                         Row phone = new Row(Ui.tr("Fotos do celular", "Pictures from phone"), "phone");
                         phone.value = String.valueOf(PhoneUpload.pictures(getContext()).size());
                         phone.chevron = true;
+                        phone.desc = Ui.tr("Envie fotos do celular pelo Wi-Fi, com um código.", "Send photos from your phone over Wi-Fi, with a code.");
                         rows.add(phone);
                     }
-                    rows.add(size);
+                    break;
+                }
+                case PREFS_REGION: {
+                    Row city = new Row(Ui.tr("Cidade", "City"), "city");
+                    city.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
+                    city.chevron = true;
+                    city.desc = Ui.tr("Para o clima e o fuso do Início.", "For the weather on the home screen.");
+                    Row language = new Row(Ui.tr("Idioma", "Language"), "lang");
+                    language.value = languageName(oneOf(Prefs.language(), LANGUAGES));
+                    language.desc = Ui.tr("O idioma do Início e destes menus.", "The language of the home screen and these menus.");
+                    Row units = new Row(Ui.tr("Temperatura", "Temperature"), "temp");
+                    units.value = unitsName(oneOf(Prefs.temperature(), UNITS));
+                    units.desc = Ui.tr("Celsius ou Fahrenheit.", "Celsius or Fahrenheit.");
+                    rows.add(city);
                     rows.add(language);
                     rows.add(units);
                     break;
@@ -626,16 +675,55 @@ public class SettingsActivity extends Activity {
                     c.drawText(shown, right, base, rowValue);
                     room -= rowValue.measureText(shown) + 30 * k;
                 }
+                float labelX = rowRect.left + 30 * k;
+                if (r.symbol != null) {
+                    Symbols.draw(getContext(), c, r.symbol, labelX + 17 * k, rowRect.centerY(), 34 * k, blend(0xCCFFFFFF, INK, f));
+                    labelX += 58 * k;
+                    room -= 58 * k;
+                }
                 c.drawText(TextUtils.ellipsize(r.label, new TextPaint(rowLabel), Math.max(room, 100 * k), TextUtils.TruncateAt.END).toString(),
-                        rowRect.left + 30 * k, base, rowLabel);
+                        labelX, base, rowLabel);
             }
             // On the left, under the title: how it works, or the last notice.
             if (SystemClock.uptimeMillis() < noteUntil) {
                 c.drawText(note, 500 * k, 790 * k, hintWarn);
             } else {
+                // What the focused row does, wrapped under the title, then how to use the screen.
+                float y = 790;
+                if (focus < rows.size() && !rows.get(focus).desc.isEmpty()) {
+                    for (String line : wrap(rows.get(focus).desc, hint, 640 * k)) {
+                        c.drawText(line, 500 * k, y * k, hint);
+                        y += 34;
+                    }
+                    y += 14;
+                }
                 String[] lines = hintLines();
-                for (int i = 0; i < lines.length; i++) c.drawText(lines[i], 500 * k, (790 + 36 * i) * k, hint);
+                for (int i = 0; i < lines.length; i++) {
+                    c.drawText(lines[i], 500 * k, (y + 36 * i) * k, version);
+                }
             }
+        }
+
+        private final java.util.Map<String, List<String>> wrapped = new java.util.HashMap<>();
+
+        /** Splits a sentence into lines that fit `width` (cached: it is asked for on every frame). */
+        private List<String> wrap(String text, Paint paint, float width) {
+            List<String> out = wrapped.get(text);
+            if (out != null) return out;
+            out = new ArrayList<>();
+            StringBuilder line = new StringBuilder();
+            for (String word : text.split(" ")) {
+                String tryLine = line.length() == 0 ? word : line + " " + word;
+                if (line.length() > 0 && paint.measureText(tryLine) > width) {
+                    out.add(line.toString());
+                    line = new StringBuilder(word);
+                } else {
+                    line = new StringBuilder(tryLine);
+                }
+            }
+            if (line.length() > 0) out.add(line.toString());
+            wrapped.put(text, out);
+            return out;
         }
 
         private String[] hintLines() {
@@ -646,6 +734,10 @@ public class SettingsActivity extends Activity {
                     return new String[] {Ui.tr("OK: ocultar ou mostrar", "OK: hide or show"),
                             Ui.tr("Os apps ocultos continuam instalados.", "Hidden apps stay installed.")};
                 case PREFS:
+                    return new String[] {Ui.tr("OK: abrir", "OK: open")};
+                case PREFS_HOME:
+                case PREFS_BG:
+                case PREFS_REGION:
                     return new String[] {Ui.tr("OK ou ← →: mudar", "OK or ← →: change")};
                 case CITY:
                     return new String[] {Ui.tr("OK: buscar ou escolher", "OK: search or choose")};
@@ -827,7 +919,10 @@ public class SettingsActivity extends Activity {
                 case SHELF: enter(APPS, 0); break;
                 case HIDDEN: enter(APPS, 1); break;
                 case APPS: enter(MAIN, 1); break;
-                case CITY: enter(PREFS, 0); break;
+                case CITY: enter(PREFS_REGION, 0); break;
+                case PREFS_HOME: enter(PREFS, 0); break;
+                case PREFS_BG: enter(PREFS, 1); break;
+                case PREFS_REGION: enter(PREFS, 2); break;
                 case PREFS: enter(MAIN, 2); break;
                 default: enter(MAIN, 0); break;
             }
@@ -841,7 +936,7 @@ public class SettingsActivity extends Activity {
         /** Left/right: reorder a shelf app, or change a preference's value. */
         private void side(int by) {
             if (screen == SHELF) moveShelfApp(by);
-            else if (screen == PREFS) cycle(by);
+            else if (isPrefs(screen) && screen != PREFS) cycle(by);
         }
 
         private void cycle(int by) {
@@ -859,6 +954,8 @@ public class SettingsActivity extends Activity {
                     ((android.app.Activity) getContext()).requestPermissions(
                             new String[] {android.Manifest.permission.READ_EXTERNAL_STORAGE}, 7);
                 }
+            } else if (tag.equals("bgsource")) {
+                Prefs.put("bgSource", next(BG_SOURCES, oneOf(Prefs.bgSource(), BG_SOURCES), by));
             } else if (tag.equals("bgcolor")) {
                 String[] hex = new String[BG_COLORS.length];
                 for (int i = 0; i < hex.length; i++) hex[i] = BG_COLORS[i][0];
@@ -889,6 +986,14 @@ public class SettingsActivity extends Activity {
             {"2E9E5B", "Verde", "Green"}, {"1798A8", "Turquesa", "Teal"}, {"E07A1F", "Laranja", "Orange"},
             {"D6407A", "Rosa", "Pink"}, {"5A5A60", "Grafite", "Graphite"},
         };
+
+        private static final String[] BG_SOURCES = {"both", "mine", "art"};
+
+        private static String bgSourceName(String source) {
+            if (source.equals("mine")) return Ui.tr("Minhas fotos", "My photos");
+            if (source.equals("art")) return Ui.tr("Capas de filmes", "Show art");
+            return Ui.tr("As duas", "Both");
+        }
 
         private static String bgModeName(String mode) {
             if (mode.equals("static")) return Ui.tr("Cor", "Color");
@@ -1019,7 +1124,7 @@ public class SettingsActivity extends Activity {
             Prefs.put(new String[][] {{"city", r[0]}, {"latitude", r[2]}, {"longitude", r[3]}, {"region", r[4].toUpperCase(Locale.ROOT)},
                     {"currency", currencyFor(r[4].toUpperCase(Locale.ROOT))}});
             HomeData.get(getContext()).settingsChanged();
-            enter(PREFS, 0);
+            enter(PREFS_REGION, 0);
         }
 
         private void activate() {
@@ -1045,6 +1150,10 @@ public class SettingsActivity extends Activity {
                 enter(rows.get(focus).tag.equals("shelf") ? SHELF : HIDDEN, 0);
                 return;
             } else if (screen == PREFS) {
+                String group = rows.get(focus).tag;
+                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG : PREFS_REGION, 0);
+                return;
+            } else if (isPrefs(screen)) {
                 if (rows.get(focus).tag.equals("phone")) {
                     activity.startActivity(new Intent(activity, PhoneUploadActivity.class));
                     return;

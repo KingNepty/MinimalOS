@@ -54,6 +54,12 @@ final class Prefs {
         return m.equals("static") || m.equals("image") ? m : "dynamic";
     }
 
+    /** Where the Images background gets its pictures: "both", "mine" (sent from the phone) or "art" (show and movie art). */
+    static String bgSource() {
+        String s = get("bgSource", "both");
+        return s.equals("mine") || s.equals("art") ? s : "both";
+    }
+
     /** The static background's color, as RRGGBB. */
     static String bgColor() { return get("bgColor", "3A5BD9"); }
 

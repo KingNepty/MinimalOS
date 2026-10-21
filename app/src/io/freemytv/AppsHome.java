@@ -107,7 +107,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     // Background: "dynamic" (the focused app's color), "static" (one color) or "image" (your photos in
     // Pictures/FreeMyTV, and the movie and show art the app already downloaded).
-    private String bgMode = "dynamic";
+    private String bgMode = "dynamic", bgSource = "both";
     private int staticColor = 0xFF3A5BD9;
     private Bitmap bgA, bgB;   // the picture on screen and the one fading in (480x270, darkened, already baked)
     private final Spring imgFade = new Spring(0.9f, 1f, 0);
@@ -121,6 +121,11 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             staticColor = 0xFF000000 | Integer.parseInt(Prefs.bgColor(), 16);
         } catch (NumberFormatException e) {
             staticColor = 0xFF3A5BD9;
+        }
+        String source = Prefs.bgSource();
+        if (!source.equals(bgSource)) {
+            bgSource = source;
+            bgA = bgB = null;
         }
         if (!mode.equals(bgMode)) {
             bgMode = mode;
@@ -153,11 +158,15 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                         if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")) files.add(f);
                     }
                 }
-                files.addAll(PhoneUpload.pictures(c));   // the ones sent from the phone
-                Recs recs = Recs.get(c);
-                for (Recs.Pick p : recs.showcase()) {
-                    java.io.File f = recs.readyImage(p);
-                    if (f != null) files.add(f);
+                final boolean wantMine = !bgSource.equals("art"), wantArt = !bgSource.equals("mine");
+                if (!wantMine) files.clear();
+                else files.addAll(PhoneUpload.pictures(c));   // the ones sent from the phone
+                if (wantArt) {
+                    Recs recs = Recs.get(c);
+                    for (Recs.Pick p : recs.showcase()) {
+                        java.io.File f = recs.readyImage(p);
+                        if (f != null) files.add(f);
+                    }
                 }
                 java.util.Collections.sort(files);
                 for (int tries = 0; tries < files.size() && baked == null; tries++) {
