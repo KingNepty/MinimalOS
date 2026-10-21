@@ -41,7 +41,7 @@ import java.util.concurrent.Executors;
  */
 final class AppsHome extends View implements Choreographer.FrameCallback, HomeData.Listener {
     // Layout, in a 1920 × 1080 space (scaled by k).
-    private static final float MARGIN = 120, GRID_W = 1632;
+    private static final float MARGIN = 144, GRID_W = 1632;   // MARGIN = the tiles' left edge
     private static final float PANEL_TOP = 692, PANEL_PAD = 40, PANEL_PAD_V = 34, HEADER_H = 64, SCROLL_UNIT = 100;
     // The grid's geometry follows Settings → Preferences → Shelf Size (apps per row, 6 by default): the grid keeps its
     // width and the 16:9 tiles shrink to fit.
@@ -219,6 +219,38 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int zone = GRID, index, pillIndex, sheetIndex;
     private boolean sheetOpen, running, okDown;
     private final Spring scrollRow = new Spring(0.42f, 0.9f, 0);
+    // The focused tile leans toward where the focus came from and settles back; a soft light slides over it.
+    private final Spring tiltX = new Spring(0.34f, 0.62f, 0), tiltY = new Spring(0.34f, 0.62f, 0);
+    private final Matrix tiltMatrix = new Matrix();
+    private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    private void kick(int dx, int dy) {
+        if (dx == 0 && dy == 0) return;
+        tiltY.value = 9f * dx;
+        tiltX.value = -7f * dy;
+        tiltY.velocity = tiltX.velocity = 0;
+        tiltY.target = tiltX.target = 0;
+    }
+
+    private boolean tilt(Canvas c, float cx, float cy, float amount) {
+        float ry = tiltY.value * amount, rx = tiltX.value * amount;
+        if (Math.abs(ry) < 0.05f && Math.abs(rx) < 0.05f) return false;
+        tiltMatrix.setSkew(-rx * 0.004f, ry * 0.004f, cx, cy);
+        tiltMatrix.postScale(1 - 0.0016f * Math.abs(ry), 1 - 0.0016f * Math.abs(rx), cx, cy);
+        c.save();
+        c.concat(tiltMatrix);
+        return true;
+    }
+
+    private void specular(Canvas c, RectF r, float radius, float f, float alpha) {
+        float pos = 0.5f - Math.max(-0.45f, Math.min(0.45f, tiltY.value / 16f));
+        float w = r.width();
+        sheen.setShader(new LinearGradient(r.left + w * (pos - 0.35f), r.top, r.left + w * (pos + 0.35f), r.bottom,
+                new int[] {0x00FFFFFF, Ui.alpha(0xFFFFFFFF, 0.26f * f * alpha), 0x00FFFFFF}, new float[] {0f, 0.5f, 1f},
+                Shader.TileMode.CLAMP));
+        c.drawRoundRect(r, radius, radius, sheen);
+        sheen.setShader(null);
+    }
     private final Spring glow = new Spring(0.8f, 1f, 1);
     private final Spring nameIn = new Spring(0.35f, 0.9f, 1);
     private final Spring sheet = new Spring(0.34f, 0.9f, 0);
@@ -398,14 +430,13 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         w = width;
         h = height;
         k = w / 1920f;
-        greetingPaint = Ui.text(Ui.semibold, 22 * k, 0x99FFFFFF);
-        greetingPaint.setLetterSpacing(0.24f);
+        greetingPaint = Ui.text(Ui.medium, 28 * k, 0xB3FFFFFF);
         clockPaint = Ui.text(Ui.thin, 126 * k, 0xFFFFFFFF);
         suffixPaint = Ui.text(Ui.semibold, 30 * k, 0xB3FFFFFF);
-        datePaint = Ui.text(Ui.semibold, 24 * k, 0x99FFFFFF);
-        datePaint.setLetterSpacing(0.13f);
+        datePaint = Ui.text(Ui.medium, 27 * k, 0xB3FFFFFF);
+        datePaint.setLetterSpacing(0.02f);
         weatherPaint = Ui.text(Ui.semibold, 27 * k, 0xCCFFFFFF);
-        namePaint = Ui.text(Ui.light, 92 * k, 0xFFFFFFFF);
+        namePaint = Ui.text(Ui.light, 66 * k, 0xFFFFFFFF);
         pillText = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
         sheetTitle = Ui.text(Ui.displaySemibold, 40 * k, 0xFFFFFFFF);
         sheetTitle.setTextAlign(Paint.Align.CENTER);
@@ -421,11 +452,17 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         layoutPills();
     }
 
+    private float pillFull(int i) {
+        return 2 * PILL_PAD * k + 32 * k + 14 * k + pillText.measureText(pills.get(i).label);
+    }
+
+    /** Where the buttons sit: icon-only circles; the focused one widens to show its name. */
     private void layoutPills() {
         if (pillText == null) return;
         float right = 1840 * k, ph = PILL_H * k;
         for (int i = pills.size() - 1; i >= 0; i--) {
-            float width = 2 * PILL_PAD * k + 32 * k + 14 * k + pillText.measureText(pills.get(i).label);
+            float f = Ui.clamp(pillFocus[i].value);
+            float width = ph + f * (pillFull(i) - ph);
             pillRects[i].set(right - width, PILL_CY * k - ph / 2, right, PILL_CY * k + ph / 2);
             right -= width + PILL_GAP * k;
         }
@@ -435,7 +472,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled();
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !tiltX.settled() || !tiltY.settled();
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -454,6 +491,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         nameIn.step(dt);
         sheet.step(dt);
         imgFade.step(dt);
+        tiltX.step(dt);
+        tiltY.step(dt);
         for (int i = 0; i < pop.length; i++) {
             pop[i].target = zone == GRID && i == index ? 1 : 0;
             pop[i].step(dt);
@@ -509,9 +548,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     private String greeting() {
         int hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
-        if (hour < 12) return Ui.tr("BOM DIA", "GOOD MORNING");
-        if (hour < 18) return Ui.tr("BOA TARDE", "GOOD AFTERNOON");
-        return Ui.tr("BOA NOITE", "GOOD EVENING");
+        if (hour < 12) return Ui.tr("Bom dia", "Good morning");
+        if (hour < 18) return Ui.tr("Boa tarde", "Good afternoon");
+        return Ui.tr("Boa noite", "Good evening");
     }
 
     private void drawHeader(Canvas c) {
@@ -531,7 +570,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float dividerX = end + 34 * k;
         stroke.setColor(0x38FFFFFF);
         c.drawLine(dividerX, base - 84 * k, dividerX, base - 6 * k, stroke);
-        String date = Ui.date(now).replace(",", "").toUpperCase(Ui.locale());
+        String date = Ui.date(now).replace(",", "");
+        if (!date.isEmpty()) date = date.substring(0, 1).toUpperCase(Ui.locale()) + date.substring(1);
         c.drawText(date, dividerX + 34 * k, base - 28 * k, datePaint);
         drawWeather(c, x, base + 58 * k);
     }
@@ -554,6 +594,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     }
 
     private void drawPills(Canvas c) {
+        layoutPills();
         for (int i = 0; i < pills.size(); i++) {
             RectF r = pillRects[i];
             float f = Ui.clamp(pillFocus[i].value), s = 1 + 0.06f * f;
@@ -568,10 +609,13 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             }
             int ink = blend(0xFFFFFFFF, INK, f);
             HomeApps.Item it = pills.get(i);
-            float iconX = cell.left + PILL_PAD * k * s + 16 * k * s;
-            Symbols.draw(getContext(), c, it.symbol, iconX, cy, 31 * k * s, ink);
-            pillText.setColor(ink);
-            c.drawText(it.label, iconX + 16 * k * s + 14 * k, cy + Ui.halfCap(pillText), pillText);
+            float iconX = cell.left + (PILL_H / 2f + f * (PILL_PAD + 16 - PILL_H / 2f)) * k * s;
+            Symbols.draw(getContext(), c, it.symbol, iconX, cy, 33 * k * s, ink);
+            float textAlpha = Ui.clamp((f - 0.45f) / 0.55f);
+            if (textAlpha > 0.01f) {
+                pillText.setColor(Ui.alpha(ink, textAlpha));
+                c.drawText(it.label, iconX + 16 * k * s + 14 * k, cy + Ui.halfCap(pillText), pillText);
+            }
         }
     }
 
@@ -580,9 +624,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float f = Ui.clamp(nameIn.value);
         namePaint.setAlpha(Math.round(255 * f));
         String name = zone == HEADER ? Ui.tr("Todos os apps", "All Apps") : apps.get(index).label;
-        float x = (MARGIN + 18) * k;
+        float x = MARGIN * k;
         c.drawText(TextUtils.ellipsize(name, new android.text.TextPaint(namePaint), 1500 * k, TextUtils.TruncateAt.END).toString(),
-                x - Ui.leftBearing(namePaint, name), (612 + 16 * (1 - f)) * k, namePaint);
+                x - Ui.leftBearing(namePaint, name), (650 + 14 * (1 - f)) * k, namePaint);
     }
 
     // The favorites (the shelf) fill the first rows; every other app starts on a row of its own, never in a favorites row.
@@ -659,8 +703,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float y = PANEL_TOP + headerTop - shift;
         float a = fadeTop(y);
         if (a <= 0.01f || y > 1080) return;
-        String label = Ui.tr("TODOS OS APPS", "ALL APPS") + "  ·  " + (apps.size() - fav);
-        float left = gridLeft() - 14 * k, width = datePaint.measureText(label) + 110 * k, top = y * k, bottom = (y + HEADER_H) * k;
+        String label = Ui.tr("Todos os apps", "All apps") + "  ·  " + (apps.size() - fav);
+        float left = gridLeft() - 28 * k, width = datePaint.measureText(label) + 124 * k, top = y * k, bottom = (y + HEADER_H) * k;
         float f = zone == HEADER && headerSub == 0 ? 1 : 0;
         tmp.set(left, top, left + width, bottom);
         if (f > 0) {
@@ -674,7 +718,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         datePaint.setAlpha(255);
         if (open) {
             float cx0 = left + width + 22 * k, ch = 52 * k, cy0 = (top + bottom) / 2 - ch / 2;
-            String[] names = {Ui.tr("RECENTES", "RECENT"), "A-Z"};
+            String[] names = {Ui.tr("Recentes", "Recent"), "A-Z"};
             for (int s = 0; s < 2; s++) {
                 float cw = datePaint.measureText(names[s]) + 44 * k;
                 boolean on = (s == 1) == az, hot = zone == HEADER && headerSub == s + 1;
@@ -722,6 +766,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             c.drawBitmap(tileShadow(bw, bh), null, tmp, shadowPaint);
             c.restore();
         }
+        boolean leaning = f > 0.05f && tilt(c, cx, cy, f);
         Bitmap art = apps.get(i).tile;
         if (art != null) {
             if (shaders[i] == null) shaders[i] = new BitmapShader(art, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
@@ -739,7 +784,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (f > 0.02f) {
             stroke.setColor(Ui.alpha(0xFFFFFFFF, 0.55f * f * alpha));
             c.drawRoundRect(cell, r, r, stroke);
+            if (f > 0.05f) specular(c, cell, r, f, alpha);
         }
+        if (leaning) c.restore();
     }
 
     /** One soft shadow at the tile's resting size, blurred once. */
@@ -943,6 +990,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             }
             if (next == index) return;
             index = next;
+            kick(dx, dy);
             focusChanged(false);
         } else if (zone == HEADER) {
             if (dx != 0) {

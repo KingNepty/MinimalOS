@@ -211,6 +211,11 @@ final class French {
         T.put("GOOD EVENING", "BONSOIR");
         T.put("Home Style", "Style d'accueil");
         T.put("ALL APPS", "TOUTES LES APPLIS");
+        T.put("Good morning", "Bonjour");
+        T.put("Good afternoon", "Bon après-midi");
+        T.put("Good evening", "Bonsoir");
+        T.put("All apps", "Toutes les applis");
+        T.put("Recent", "Récentes");
         T.put("RECENT", "RÉCENTES");
         T.put("All Apps", "Toutes les applis");
         T.put("Background", "Arrière-plan");
