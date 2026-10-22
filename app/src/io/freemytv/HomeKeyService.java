@@ -18,9 +18,35 @@ public class HomeKeyService extends AccessibilityService {
     private static final long COOLDOWN = 1500;
     private static volatile HomeKeyService instance;
     private long last;
+    private static volatile long pausedUntil;
+
+    /** Lets Amazon's own screens (its settings) stay in front for a while instead of sending the person back to our home. */
+    static void pauseRedirect(long ms) {
+        pausedUntil = SystemClock.elapsedRealtime() + ms;
+    }
 
     static boolean running() {
         return instance != null;
+    }
+
+    /**
+     * Android turns this service off whenever the app is replaced (an update) and some TVs lose it at a reboot. With the
+     * one-time permission grant (adb shell pm grant io.freemytv android.permission.WRITE_SECURE_SETTINGS, in the setup
+     * command) the app turns it back on itself, as long as MinimalOS mode is the one the person chose.
+     */
+    static void enableSelf(Context c) {
+        try {
+            if (running() || !HomeMode.FREE.equals(HomeMode.state(c).optString("mode"))) return;
+            if (c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+            android.content.ContentResolver r = c.getContentResolver();
+            String key = "enabled_accessibility_services", now = android.provider.Settings.Secure.getString(r, key);
+            if (now == null || now.isEmpty()) now = COMPONENT;
+            else if (!now.contains(COMPONENT)) now += ":" + COMPONENT;
+            android.provider.Settings.Secure.putString(r, key, now);
+            android.provider.Settings.Secure.putInt(r, "accessibility_enabled", 1);
+        } catch (RuntimeException e) {
+            AppLog.w("turn the service back on: " + e.getMessage());
+        }
     }
 
     /** Turns the service off (only it can: Android has no other way). Returns false if it wasn't on. */
@@ -71,7 +97,7 @@ public class HomeKeyService extends AccessibilityService {
         if (pkg == null || cls == null || !AMAZON_LAUNCHER.contentEquals(pkg)) return;
         if (!cls.toString().contains("HomeActivity") || Watchdog.crashedTooOften(this)) return;
         long now = SystemClock.elapsedRealtime();
-        if (now - last < COOLDOWN) return;
+        if (now < pausedUntil || now - last < COOLDOWN) return;
         last = now;
         openHome(this);
     }

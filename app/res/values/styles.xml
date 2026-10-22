@@ -8,5 +8,18 @@
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowShowWallpaper">false</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
+        <item name="android:windowAnimationStyle">@style/FreeMyTV.WindowAnimation</item>
+    </style>
+
+    <!-- Coming back to the home screen (from an app, with Back or Home) is a soft fade and settle, not a cut. -->
+    <style name="FreeMyTV.WindowAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/home_enter</item>
+        <item name="android:activityCloseEnterAnimation">@anim/home_enter</item>
+        <item name="android:taskOpenEnterAnimation">@anim/home_enter</item>
+        <item name="android:taskCloseEnterAnimation">@anim/home_enter</item>
+        <item name="android:taskToFrontEnterAnimation">@anim/home_enter</item>
+        <item name="android:taskToBackExitAnimation">@anim/home_exit</item>
+        <item name="android:taskOpenExitAnimation">@anim/home_exit</item>
+        <item name="android:activityOpenExitAnimation">@anim/home_exit</item>
     </style>
 </resources>

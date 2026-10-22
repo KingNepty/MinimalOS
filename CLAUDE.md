@@ -64,8 +64,10 @@ Then, in the code:
 itself with ADB there. `tools/fire-debloat.sh <IP> off|on` turns Amazon's shopping, promo, tutorial and usage-collection
 apps off and back on (`pm disable-user`, never uninstall; from the computer). Free My TV mode is the accessibility service `HomeKeyService`, which opens our home screen when
 Amazon's comes up. Turn it on once from the computer (it persists across reboots):
+`adb shell pm grant io.freemytv android.permission.WRITE_SECURE_SETTINGS` then
 `adb shell settings put secure enabled_accessibility_services io.freemytv/io.freemytv.HomeKeyService`
-(if other services are already listed, append with `:`). *Original* in the app turns it off (`disableSelf`). Nothing of
+(if other services are already listed, append with `:`). The grant lets the app turn the service back on by itself after
+an update or a reboot (Android switches it off when the app is replaced); without it, redo the second command after each update. *Original* in the app turns it off (`disableSelf`). Nothing of
 Amazon's is turned off. Then they open *Free My TV* → *Home Screen* → *Free My TV* to confirm; if the service isn't on yet,
 that screen shows these same commands (with the TV's IP) and goes on by itself once the service starts.
 

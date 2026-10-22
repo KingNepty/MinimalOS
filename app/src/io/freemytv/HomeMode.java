@@ -106,7 +106,7 @@ final class HomeMode {
     // opens our home screen when Amazon's comes up. It's turned on once from a computer (FIRE_ON), and "Original" turns
     // it off from the TV (disableSelf). Nothing of Amazon's is turned off.
 
-    static final String FIRE_ON = "adb shell settings put secure enabled_accessibility_services " + HomeKeyService.COMPONENT;
+    static final String FIRE_ON = "adb shell pm grant " + PKG + " android.permission.WRITE_SECURE_SETTINGS && adb shell settings put secure enabled_accessibility_services " + HomeKeyService.COMPONENT;
 
     /** Written by HomeKeyService (main process) when it turns on or off; the settings screen (:home) reads it. */
     static void fireService(Context c, boolean on) {
@@ -161,6 +161,12 @@ final class HomeMode {
 
     /** After a reboot or an update: the setting that keeps the service on can be lost; say so (the TV can't fix it). */
     private static void verifyFire(Context app) {
+        if (!HomeKeyService.running()) {
+            HomeKeyService.enableSelf(app);
+            if (!HomeKeyService.running()) {
+                try { Thread.sleep(2500); } catch (InterruptedException ignored) { }   // it takes a moment to connect
+            }
+        }
         fireService(app, HomeKeyService.running());
         if (!HomeKeyService.running()) {
             notice(app, Ui.tr("O Início do MinimalOS está desligado na TV. Pelo computador: ",

@@ -429,7 +429,7 @@ final class HomeApps {
     }
 
     /**
-     * Shortcuts to the TV's own settings screens: network, display and sound, Bluetooth, apps, accessibility, about.
+     * Shortcuts to the TV's own settings screens: TV settings, network, apps, about.
      * Each one is tried as a standard Android settings action and as the maker's own screen (Fire OS has its own);
      * only the ones this TV can really open are listed.
      */
@@ -437,16 +437,11 @@ final class HomeApps {
         PackageManager pm = c.getPackageManager();
         String amazon = "c:com.amazon.tv.settings.v2/.tv.";
         Object[][] table = {
-            {"sc-tv", "Ajustes da TV", "TV Settings", "settings", new String[] {"a:android.settings.SETTINGS"}},
+            {"sc-tv", "Ajustes da TV", "TV Settings", "settings",
+                new String[] {"c:com.amazon.tv.launcher/.ui.MainSettingsActivity", "a:android.settings.SETTINGS"}},
             {"sc-net", "Internet", "Network", "wifi", new String[] {"a:android.settings.WIFI_SETTINGS", amazon + "network.NetworkActivity"}},
-            {"sc-display", "Imagem e som", "Display & Sound", "tv_settings",
-                new String[] {"a:android.settings.DISPLAY_SETTINGS", "a:android.settings.SOUND_SETTINGS"}},
-            {"sc-bt", "Bluetooth", "Bluetooth", "bluetooth",
-                new String[] {amazon + "controllers_bluetooth_devices.ControllersAndBluetoothActivity", "a:android.settings.BLUETOOTH_SETTINGS"}},
             {"sc-apps", "Gerenciar apps", "Manage Apps", "apps",
                 new String[] {"a:android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS", "a:android.settings.APPLICATION_SETTINGS"}},
-            {"sc-access", "Acessibilidade", "Accessibility", "accessibility",
-                new String[] {amazon + "accessibility.AccessibilityActivity", "a:android.settings.ACCESSIBILITY_SETTINGS"}},
             {"sc-about", "Sobre", "About", "tv", new String[] {"a:android.settings.DEVICE_INFO_SETTINGS"}},
         };
         List<Item> out = new ArrayList<>();
@@ -493,7 +488,7 @@ final class HomeApps {
         return it;
     }
 
-    /** Opens the item with the system zoom transition growing out of the card (the app starts opening right away). */
+    /** Opens the item with a soft transition: the home dives away while the app fades in (the app starts opening right away). */
     static boolean open(Activity a, Item it, View from, int x, int y, int w, int h) {
         if (it.kind == APP && it.pkg != null) recordLaunch(a, it.pkg);
         Intent intent;
@@ -522,8 +517,12 @@ final class HomeApps {
         }
         if (intent == null) return false;
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        // Amazon's own settings come from its launcher: tell the main process not to send us straight back home.
+        if (it.kind == LINK || it.kind == ANDROID_SETTINGS) {
+            a.sendBroadcast(new Intent(HomeReceiver.PAUSE).setPackage(a.getPackageName()));
+        }
         try {
-            a.startActivity(intent, ActivityOptions.makeScaleUpAnimation(from, x, y, Math.max(w, 1), Math.max(h, 1)).toBundle());
+            a.startActivity(intent, ActivityOptions.makeCustomAnimation(a, R.anim.app_enter, R.anim.home_dive).toBundle());
             return true;
         } catch (ActivityNotFoundException | SecurityException e) {
             AppLog.w("couldn't open " + it.label + ": " + e.getMessage());

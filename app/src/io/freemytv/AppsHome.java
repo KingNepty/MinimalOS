@@ -82,7 +82,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float bottom = others > 0 ? (open ? othersTop + (othersRows - 1) * ROW_PITCH + TILE_H : headerTop + HEADER_H)
                 : favRows == 0 ? 0 : panelH;
         linksLabelTop = bottom + 44;
-        linksTop = linksLabelTop + 56 + PANEL_PAD_V;
+        linksTop = linksLabelTop + 56;
     }
 
     private float tileTop(int i) {
@@ -128,6 +128,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private String[] capA, capB;   // what each shows: the title (and season) and where to watch it; null for your own photos
     private static final int IMG_W = 1280, IMG_H = 720;
     private Paint capTitle, capSub;
+    // Coming back to the home screen: a dark veil lifts over about half a second, after the window's own fade-in.
+    private final Spring reveal = new Spring(0.55f, 1f, 1);
 
     // The splash: when the home screen first comes up after the app starts (a boot, an update), "MinimalOS" fades in on
     // black, fades out, and the black lifts. It plays once per start, not on every Home press.
@@ -548,6 +550,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     void resume() {
         if (running) return;
         running = true;
+        reveal.value = 0;
+        reveal.velocity = 0;
+        reveal.target = 1;
         readBackground();
         data.addListener(this);
         data.refreshIfStale();
@@ -575,13 +580,22 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     /** Home pressed on the home screen: the first app focused, nothing open. */
     void reset(boolean animated) {
-        zone = GRID;
         sheetOpen = false;
         sheet.target = animated ? 0 : sheet.value;
         if (!animated) sheet.snap(0);
-        index = 0;
+        menuOpen = false;
+        menuAnim.snap(0);
+        // The home comes back where it was left: the last app that was selected (not the first one).
+        String last = Prefs.lastApp();
+        int at = 0;
+        for (int i = 0; i < apps.size() && !last.isEmpty(); i++) {
+            if (last.equals(apps.get(i).pkg) || last.equals(apps.get(i).key)) at = i;
+        }
+        if (!open && at >= fav && at < linkStart) at = 0;
+        zone = GRID;
+        index = Math.min(at, Math.max(0, apps.size() - 1));
         focusChanged(true);
-        if (!animated) scrollRow.snap(0);
+        scrollRow.snap(scrollRow.target);
         invalidate();
     }
 
@@ -623,7 +637,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     }
 
     private void apply(List<HomeApps.Item> list, int favorites, int linkFrom, int[] colors, List<HomeApps.Item> in) {
-        String keep = index < apps.size() ? apps.get(index).pkg : null;
+        String keep = index < apps.size() ? (apps.get(index).pkg != null ? apps.get(index).pkg : apps.get(index).key) : null;
+        if (keep == null) keep = Prefs.lastApp().isEmpty() ? null : Prefs.lastApp();
         apps = list;
         fav = favorites;
         linkStart = linkFrom;
@@ -634,7 +649,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         shaders = new BitmapShader[list.size()];
         for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.34f, 0.74f, 0);
         int at = 0;
-        for (int i = 0; i < list.size() && keep != null; i++) if (keep.equals(list.get(i).pkg)) at = i;
+        for (int i = 0; i < list.size() && keep != null; i++) if (keep.equals(list.get(i).pkg) || keep.equals(list.get(i).key)) at = i;
         if (!open && at >= fav && at < linkStart) at = 0;
         index = Math.min(at, Math.max(0, list.size() - 1));
         if (zone == HEADER && linkStart <= fav) zone = GRID;
@@ -681,6 +696,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         splashPaint = Ui.text(Ui.thin, 118 * k, 0xFFFFFFFF);
         splashPaint.setTextAlign(Paint.Align.CENTER);
         splashPaint.setLetterSpacing(0.05f);
+        linkText = Ui.text(Ui.semibold, 22 * k, 0xFFFFFFFF);
+        linkText.setTextAlign(Paint.Align.CENTER);
+        linkShadow = null;
         capTitle = Ui.text(Ui.medium, 40 * k, 0xF2FFFFFF);
         capSub = Ui.text(Ui.regular, 29 * k, 0xB3FFFFFF);
         capTitle.setShadowLayer(10 * k, 0, 2 * k, 0xAA000000);
@@ -721,7 +739,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled() || !splashDone;
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !reveal.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled() || !splashDone;
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -740,6 +758,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         nameIn.step(dt);
         sheet.step(dt);
         imgFade.step(dt);
+        reveal.step(dt);
         dim.target = zone == GRID ? 1 : 0;
         dim.step(dt);
         tiltX.step(dt);
@@ -760,6 +779,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         drawGrid(c);
         if (sheet.value > 0.01f) drawSheet(c);
         if (menuAnim.value > 0.01f) drawMenu(c);
+        if (reveal.value < 0.995f) {
+            fill.setColor(Ui.alpha(0xFF000000, 0.55f * (1 - Ui.clamp(reveal.value))));
+            c.drawRect(0, 0, w, h, fill);
+        }
         if (!splashDone) drawSplash(c);
     }
 
@@ -936,23 +959,15 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     }
 
     private void tileRect(int i, float rowScroll, RectF out) {
+        if (i >= linkStart) {   // the shortcuts are small glass buttons
+            float lx = gridLeft() + colOf(i) * (LINK_W + LINK_GAP) * k;
+            float ly = (PANEL_TOP + tileTop(i) - rowScroll * SCROLL_UNIT) * k;
+            out.set(lx, ly, lx + LINK_W * k, ly + LINK_H * k);
+            return;
+        }
         float x = gridLeft() + colOf(i) * (TILE_W + GAP_X) * k;
         float y = (PANEL_TOP + tileTop(i) - rowScroll * SCROLL_UNIT) * k;
         out.set(x, y, x + TILE_W * k, y + TILE_H * k);
-    }
-
-    /** The shortcuts sit in a panel like the favorites' one. */
-    private void drawLinksPanel(Canvas c, float shift) {
-        int rows = (apps.size() - linkStart + COLS - 1) / COLS;
-        float top = PANEL_TOP + linksTop - PANEL_PAD_V - shift, height = 2 * PANEL_PAD_V + (rows - 1) * ROW_PITCH + TILE_H;
-        float a = fadeTop(top + height - 70);
-        if (a <= 0.01f || top > 1080) return;
-        float left = gridLeft() - PANEL_PAD * k, right = gridLeft() + (COLS * TILE_W + (COLS - 1) * GAP_X) * k + PANEL_PAD * k;
-        panel.set(left, top * k, right, (top + height) * k);
-        fill.setColor(Ui.alpha(0x0FFFFFFF, a));
-        c.drawRoundRect(panel, 46 * k, 46 * k, fill);
-        stroke.setColor(Ui.alpha(0x24FFFFFF, a));
-        c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
     }
 
     /** "Shortcuts" above the shelf of the TV's settings screens. */
@@ -982,7 +997,6 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         }
         if (linkStart > fav) drawHeader(c, shift);
         drawLinksLabel(c, shift);
-        if (linkStart < apps.size()) drawLinksPanel(c, shift);
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < apps.size(); i++) {
                 if (!visible(i) || (pass == 1) != (i == index && zone == GRID)) continue;
@@ -1046,7 +1060,58 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         }
     }
 
+    private static final float LINK_W = 252, LINK_H = 128, LINK_GAP = 24;
+    private Paint linkText;
+    private Bitmap linkShadow;
+
+    private Bitmap linkShadow(float bw, float bh) {
+        if (linkShadow != null && shadowFor == k) return linkShadow;
+        float pad = SHADOW_PAD * k;
+        Bitmap b = Bitmap.createBitmap(Math.round(bw + 2 * pad), Math.round(bh + 2 * pad), Bitmap.Config.ARGB_8888);
+        Paint blur = new Paint(Paint.ANTI_ALIAS_FLAG);
+        blur.setColor(0xFF000000);
+        blur.setMaskFilter(new BlurMaskFilter(20 * k, BlurMaskFilter.Blur.NORMAL));
+        new Canvas(b).drawRoundRect(pad, pad, pad + bw, pad + bh, 24 * k, 24 * k, blur);
+        linkShadow = b;
+        return b;
+    }
+
+    /** A shortcut: a small glass button with the icon over its name (white with dark ink when focused). */
+    private void drawLink(Canvas c, int i, float rowScroll, float alpha) {
+        tileRect(i, rowScroll, tmp);
+        float f = Ui.clamp(pop[i].value), s = 1 + 0.08f * pop[i].value;
+        float bw = tmp.width(), bh = tmp.height(), cx = tmp.centerX(), cy = tmp.centerY();
+        cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
+        float r = 24 * k * s;
+        if (f > 0.02f) {
+            float pad = SHADOW_PAD * k;
+            c.save();
+            c.translate(cx, cy);
+            c.scale(s, s);
+            tmp.set(-bw / 2 - pad, -bh / 2 - pad + 12 * k * f, bw / 2 + pad, bh / 2 + pad + 12 * k * f);
+            shadowPaint.setAlpha(Math.round(255 * 0.55f * f * alpha));
+            c.drawBitmap(linkShadow(bw, bh), null, tmp, shadowPaint);
+            c.restore();
+        }
+        fill.setColor(Ui.alpha(blend(0x2AFFFFFF, 0xFFF5F5F7, f), alpha));
+        c.drawRoundRect(cell, r, r, fill);
+        if (f < 0.98f) {
+            stroke.setColor(Ui.alpha(0xFFFFFFFF, 0.22f * (1 - f) * alpha));
+            c.drawRoundRect(cell, r, r, stroke);
+        }
+        int ink = blend(0xFFFFFFFF, INK, f);
+        HomeApps.Item it = apps.get(i);
+        Symbols.draw(getContext(), c, it.symbol, cx, cell.top + cell.height() * 0.38f, 46 * k * s, Ui.alpha(ink, alpha));
+        linkText.setColor(Ui.alpha(ink, alpha));
+        c.drawText(TextUtils.ellipsize(it.label, new android.text.TextPaint(linkText), cell.width() - 18 * k, TextUtils.TruncateAt.END).toString(),
+                cx, cell.bottom - 22 * k * s, linkText);
+    }
+
     private void drawTile(Canvas c, int i, float rowScroll, float alpha) {
+        if (i >= linkStart) {
+            drawLink(c, i, rowScroll, alpha);
+            return;
+        }
         tileRect(i, rowScroll, tmp);
         float f = Ui.clamp(pop[i].value), s = 1 + 0.11f * pop[i].value;
         float bw = tmp.width(), bh = tmp.height(), cx = tmp.centerX(), cy = tmp.centerY();
@@ -1142,6 +1207,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     /** The focused app changed: glow in its color, its name fades in, the grid scrolls to its row. */
     private void focusChanged(boolean snapGlow) {
+        if (zone == GRID && index < apps.size()) {
+            HomeApps.Item it = apps.get(index);
+            Prefs.put("lastApp", it.pkg != null ? it.pkg : it.key == null ? "" : it.key);
+        }
         int target = bgMode.equals("static") ? staticColor : index < brand.length ? brand[index] : DARK;
         int current = blend(glowFrom, glowTo, Ui.clamp(glow.value));
         if (snapGlow) {
@@ -1197,8 +1266,18 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                     okDown = false;
                 }
                 return true;
+            case KeyEvent.KEYCODE_BACK:
+                // Like other launchers, Back on the home screen does nothing. Leaving it would make Amazon's home flash up
+                // and our home start over. From the buttons or the header it goes back to the apps, where the focus was.
+                if (!down && zone != GRID && apps.size() > 0) {
+                    zone = GRID;
+                    focusChanged(false);
+                    click.move();
+                    invalidate();
+                }
+                return true;
             default:
-                return false;   // Back and the system keys go on to the system
+                return false;   // the system keys go on to the system
         }
     }
 

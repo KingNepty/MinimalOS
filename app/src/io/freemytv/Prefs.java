@@ -63,6 +63,9 @@ final class Prefs {
     /** The static background's color, as RRGGBB. */
     static String bgColor() { return get("bgColor", "3A5BD9"); }
 
+    /** The app that was selected last on the home screen (its package), so the home comes back to it. */
+    static String lastApp() { return get("lastApp", ""); }
+
     static void put(String key, String value) {
         SharedPreferences p = sp;
         if (p != null) p.edit().putString(key, value).apply();
