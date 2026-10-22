@@ -68,17 +68,32 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private boolean open = true, az;
     private int headerSub;   // on the header: 0 the open/close button, 1 "recent", 2 "A-Z"
     private int favRows;
-    private float panelH, headerTop, othersTop;
+    private float panelH, headerTop, othersTop, linksLabelTop, linksTop;
+    private int linksBase;     // the row where the shortcuts start
+    private int linkStart;     // the first shortcut in `apps`: favorites, then the other apps, then the shortcuts
 
     private void metrics() {
         favRows = (fav + COLS - 1) / COLS;
+        int others = Math.max(0, linkStart - fav), othersRows = (others + COLS - 1) / COLS;
         panelH = favRows == 0 ? 0 : 2 * PANEL_PAD_V + (favRows - 1) * ROW_PITCH + TILE_H;
         headerTop = favRows == 0 ? 0 : panelH + 40;
         othersTop = headerTop + HEADER_H + 22;
+        linksBase = favRows + (others > 0 && open ? othersRows : 0);
+        float bottom = others > 0 ? (open ? othersTop + (othersRows - 1) * ROW_PITCH + TILE_H : headerTop + HEADER_H)
+                : favRows == 0 ? 0 : panelH;
+        linksLabelTop = bottom + 44;
+        linksTop = linksLabelTop + 56 + PANEL_PAD_V;
     }
 
     private float tileTop(int i) {
-        return i < fav ? PANEL_PAD_V + rowOf(i) * ROW_PITCH : othersTop + (rowOf(i) - favRows) * ROW_PITCH;
+        if (i < fav) return PANEL_PAD_V + rowOf(i) * ROW_PITCH;
+        if (i < linkStart) return othersTop + (rowOf(i) - favRows) * ROW_PITCH;
+        return linksTop + (rowOf(i) - linksBase) * ROW_PITCH;
+    }
+
+    /** The other apps are hidden while "All apps" is closed. */
+    private boolean visible(int i) {
+        return i < fav || i >= linkStart || open;
     }
 
     /** Where the column scrolls to (in SCROLL_UNITs) for what is focused. */
@@ -598,17 +613,20 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                 if (it.pkg != null && !have.add(it.pkg)) continue;
                 all.add(it);
             }
+            final int linkFrom = all.size();
+            all.addAll(HomeApps.systemShortcuts(c));
             final int[] colors = new int[all.size()];
             for (int i = 0; i < colors.length; i++) colors[i] = brandOf(all.get(i).tile);
             final List<HomeApps.Item> in = HomeApps.allInputs(c);
-            handler.post(() -> apply(all, favorites, colors, in));
+            handler.post(() -> apply(all, favorites, linkFrom, colors, in));
         });
     }
 
-    private void apply(List<HomeApps.Item> list, int favorites, int[] colors, List<HomeApps.Item> in) {
+    private void apply(List<HomeApps.Item> list, int favorites, int linkFrom, int[] colors, List<HomeApps.Item> in) {
         String keep = index < apps.size() ? apps.get(index).pkg : null;
         apps = list;
         fav = favorites;
+        linkStart = linkFrom;
         metrics();
         brand = colors;
         inputs = in;
@@ -617,9 +635,9 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.34f, 0.74f, 0);
         int at = 0;
         for (int i = 0; i < list.size() && keep != null; i++) if (keep.equals(list.get(i).pkg)) at = i;
-        if (!open && at >= fav) at = 0;
+        if (!open && at >= fav && at < linkStart) at = 0;
         index = Math.min(at, Math.max(0, list.size() - 1));
-        if (zone == HEADER && fav >= list.size()) zone = GRID;
+        if (zone == HEADER && linkStart <= fav) zone = GRID;
         focusChanged(true);
         scrollRow.snap(scrollRow.target);
         invalidate();
@@ -892,7 +910,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int slot(int i) {
         if (i < fav) return i;
         int favRows = (fav + COLS - 1) / COLS;
-        return favRows * COLS + (i - fav);
+        if (i < linkStart) return favRows * COLS + (i - fav);
+        return linksBase * COLS + (i - linkStart);
     }
 
     private int rowOf(int i) { return slot(i) / COLS; }
@@ -902,7 +921,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int inRow(int row, int col) {
         int best = -1, bestGap = Integer.MAX_VALUE;
         for (int i = 0; i < apps.size(); i++) {
-            if (rowOf(i) != row) continue;
+            if (!visible(i) || rowOf(i) != row) continue;
             int gap = Math.abs(colOf(i) - col);
             if (gap < bestGap) {
                 bestGap = gap;
@@ -922,8 +941,28 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         out.set(x, y, x + TILE_W * k, y + TILE_H * k);
     }
 
-    private int shown() {
-        return open ? apps.size() : Math.min(fav, apps.size());
+    /** The shortcuts sit in a panel like the favorites' one. */
+    private void drawLinksPanel(Canvas c, float shift) {
+        int rows = (apps.size() - linkStart + COLS - 1) / COLS;
+        float top = PANEL_TOP + linksTop - PANEL_PAD_V - shift, height = 2 * PANEL_PAD_V + (rows - 1) * ROW_PITCH + TILE_H;
+        float a = fadeTop(top + height - 70);
+        if (a <= 0.01f || top > 1080) return;
+        float left = gridLeft() - PANEL_PAD * k, right = gridLeft() + (COLS * TILE_W + (COLS - 1) * GAP_X) * k + PANEL_PAD * k;
+        panel.set(left, top * k, right, (top + height) * k);
+        fill.setColor(Ui.alpha(0x0FFFFFFF, a));
+        c.drawRoundRect(panel, 46 * k, 46 * k, fill);
+        stroke.setColor(Ui.alpha(0x24FFFFFF, a));
+        c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
+    }
+
+    /** "Shortcuts" above the shelf of the TV's settings screens. */
+    private void drawLinksLabel(Canvas c, float shift) {
+        if (linkStart >= apps.size()) return;
+        float y = PANEL_TOP + linksLabelTop - shift, a = fadeTop(y);
+        if (a <= 0.01f || y > 1080) return;
+        datePaint.setAlpha(Math.round(255 * 0.8f * a));
+        c.drawText(Ui.tr("Atalhos", "Shortcuts"), gridLeft(), (y + 34) * k, datePaint);
+        datePaint.setAlpha(255);
     }
 
     private void drawGrid(Canvas c) {
@@ -941,11 +980,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                 c.drawRoundRect(panel, 46 * k, 46 * k, stroke);
             }
         }
-        if (fav < apps.size()) drawHeader(c, shift);
-        int n = shown();
+        if (linkStart > fav) drawHeader(c, shift);
+        drawLinksLabel(c, shift);
+        if (linkStart < apps.size()) drawLinksPanel(c, shift);
         for (int pass = 0; pass < 2; pass++) {
-            for (int i = 0; i < n; i++) {
-                if ((pass == 1) != (i == index && zone == GRID)) continue;
+            for (int i = 0; i < apps.size(); i++) {
+                if (!visible(i) || (pass == 1) != (i == index && zone == GRID)) continue;
                 float y = PANEL_TOP + tileTop(i) - shift;
                 if (y > 1080) continue;
                 float alpha = fadeTop(y);
@@ -960,7 +1000,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float y = PANEL_TOP + headerTop - shift;
         float a = fadeTop(y);
         if (a <= 0.01f || y > 1080) return;
-        String label = Ui.tr("Todos os apps", "All apps") + "  ·  " + (apps.size() - fav);
+        String label = Ui.tr("Todos os apps", "All apps") + "  ·  " + (linkStart - fav);
         float left = gridLeft() - 28 * k, width = datePaint.measureText(label) + 124 * k, top = y * k, bottom = (y + HEADER_H) * k;
         float f = zone == HEADER && headerSub == 0 ? 1 : 0;
         tmp.set(left, top, left + width, bottom);
@@ -1214,19 +1254,20 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int navCol;
 
     private void move(int dx, int dy) {
-        int n = shown();
+        int n = apps.size();
         if (zone == GRID) {
             int next = index;
-            int lo = index < fav ? 0 : fav, hi = index < fav ? fav - 1 : n - 1;
+            int lo = index < fav ? 0 : index < linkStart ? fav : linkStart;
+            int hi = index < fav ? fav - 1 : index < linkStart ? linkStart - 1 : n - 1;
             if (dx != 0) {
                 next = Math.max(lo, Math.min(hi, index + dx));
             } else if (dy > 0) {
                 navCol = colOf(index);
                 // From the last favorites row the next stop is the "All apps" header, not the first app under it.
-                int t = index < fav && rowOf(index) + 1 >= favRows ? -1 : inRow(rowOf(index) + 1, navCol);
+                int t = index < fav && rowOf(index) + 1 >= favRows && linkStart > fav ? -1 : inRow(rowOf(index) + 1, navCol);
                 if (t >= 0 && t < n) {
                     next = t;
-                } else if (index < fav && fav < apps.size()) {
+                } else if (index < fav && linkStart > fav) {
                     zone = HEADER;
                     headerSub = 0;
                     focusChanged(false);
@@ -1236,7 +1277,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                 }
             } else if (dy < 0) {
                 navCol = colOf(index);
-                if (index >= fav && rowOf(index) == favRows) {
+                if (index >= fav && rowOf(index) == favRows && linkStart > fav) {
                     zone = HEADER;
                     headerSub = 0;
                     focusChanged(false);
@@ -1254,7 +1295,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                     return;
                 }
             }
-            if (next == index) return;
+            if (next < 0 || next == index) return;
             index = next;
             kick(dx, dy);
             focusChanged(false);
@@ -1271,9 +1312,11 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                     zone = PILLS;
                     pillIndex = 0;
                 }
-            } else if (dy > 0 && open && fav < apps.size()) {
+            } else if (dy > 0 && apps.size() > fav) {
+                int t = inRow(favRows, navCol);   // the other apps when open, else the shortcuts
+                if (t < 0) return;
                 zone = GRID;
-                index = inRow(favRows, navCol);
+                index = t;
             } else {
                 return;
             }
@@ -1325,6 +1368,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (zone == HEADER) {
             if (headerSub == 0) {
                 open = !open;
+                metrics();
                 Prefs.put("allApps", open ? "1" : "0");
                 if (!open) headerSub = 0;
                 invalidate();

@@ -59,6 +59,8 @@ final class HomeApps {
     static final int INPUTS = 7;
     /** The magnifier: opens the title search (SearchActivity). */
     static final int SEARCH = 8;
+    /** A shortcut to one of the TV's own settings screens (the "Shortcuts" shelf under All apps). */
+    static final int LINK = 9;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -72,6 +74,7 @@ final class HomeApps {
         float logoInk;      // fraction of the logo with ink (thin logos are drawn larger, with the same "weight")
         float logoScale = 1; // size tweak by eye (compact logos need more)
         boolean connected = true;
+        Intent intent;      // LINK: what it opens
     }
 
     /**
@@ -425,6 +428,65 @@ final class HomeApps {
         return items;
     }
 
+    /**
+     * Shortcuts to the TV's own settings screens: network, display and sound, Bluetooth, apps, accessibility, about.
+     * Each one is tried as a standard Android settings action and as the maker's own screen (Fire OS has its own);
+     * only the ones this TV can really open are listed.
+     */
+    static List<Item> systemShortcuts(Context c) {
+        PackageManager pm = c.getPackageManager();
+        String amazon = "c:com.amazon.tv.settings.v2/.tv.";
+        Object[][] table = {
+            {"sc-tv", "Ajustes da TV", "TV Settings", "settings", new String[] {"a:android.settings.SETTINGS"}},
+            {"sc-net", "Internet", "Network", "wifi", new String[] {"a:android.settings.WIFI_SETTINGS", amazon + "network.NetworkActivity"}},
+            {"sc-display", "Imagem e som", "Display & Sound", "tv_settings",
+                new String[] {"a:android.settings.DISPLAY_SETTINGS", "a:android.settings.SOUND_SETTINGS"}},
+            {"sc-bt", "Bluetooth", "Bluetooth", "bluetooth",
+                new String[] {amazon + "controllers_bluetooth_devices.ControllersAndBluetoothActivity", "a:android.settings.BLUETOOTH_SETTINGS"}},
+            {"sc-apps", "Gerenciar apps", "Manage Apps", "apps",
+                new String[] {"a:android.settings.MANAGE_ALL_APPLICATIONS_SETTINGS", "a:android.settings.APPLICATION_SETTINGS"}},
+            {"sc-access", "Acessibilidade", "Accessibility", "accessibility",
+                new String[] {amazon + "accessibility.AccessibilityActivity", "a:android.settings.ACCESSIBILITY_SETTINGS"}},
+            {"sc-about", "Sobre", "About", "tv", new String[] {"a:android.settings.DEVICE_INFO_SETTINGS"}},
+        };
+        List<Item> out = new ArrayList<>();
+        for (Object[] row : table) {
+            Intent found = null;
+            for (String option : (String[]) row[4]) {
+                Intent intent = option.startsWith("a:") ? new Intent(option.substring(2))
+                        : new Intent().setComponent(ComponentName.unflattenFromString(option.substring(2)));
+                android.content.pm.ResolveInfo ri = pm.resolveActivity(intent, 0);
+                if (ri == null || ri.activityInfo == null || !ri.activityInfo.exported) continue;
+                String cls = ri.activityInfo.name;
+                if (cls.contains("CTSDummy") || cls.contains("compliance")) continue;   // Fire OS answers some with a stub
+                found = intent;
+                break;
+            }
+            if (found == null) continue;
+            String label = Ui.tr((String) row[1], (String) row[2]);
+            Item it = shortcut(LINK, (String) row[0], label, (String) row[3]);
+            it.intent = found;
+            it.tile = linkTile(c, (String) row[0], (String) row[3], label);
+            out.add(it);
+        }
+        return out;
+    }
+
+    /** A dark card with the icon and the name under it. */
+    private static synchronized Bitmap linkTile(Context c, String key, String symbol, String label) {
+        String cacheKey = key + "|" + label;
+        if (TILES.containsKey(cacheKey)) return TILES.get(cacheKey);
+        Bitmap b = darkTile();
+        Canvas canvas = new Canvas(b);
+        Symbols.draw(c, canvas, symbol, TILE_W / 2f, TILE_H * 0.40f, TILE_H * 0.30f, 0xF2FFFFFF);
+        Paint text = Ui.text(Ui.medium, TILE_H * 0.135f, 0xE6FFFFFF);
+        text.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText(label, TILE_W / 2f, TILE_H * 0.86f, text);
+        b.setHasMipMap(true);
+        TILES.put(cacheKey, b);
+        return b;
+    }
+
     private static Item special(Context c, int kind, String key, String label, String symbol) {
         Item it = shortcut(kind, key, label, symbol);
         it.tile = symbolTile(c, key, symbol);
@@ -451,6 +513,9 @@ final class HomeApps {
                 break;
             case ANDROID_SETTINGS:
                 intent = new Intent(Settings.ACTION_SETTINGS);
+                break;
+            case LINK:
+                intent = it.intent == null ? null : new Intent(it.intent);
                 break;
             default:
                 return false;

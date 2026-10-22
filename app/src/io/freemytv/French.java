@@ -211,6 +211,12 @@ final class French {
         T.put("GOOD EVENING", "BONSOIR");
         T.put("Home Style", "Style d'accueil");
         T.put("ALL APPS", "TOUTES LES APPLIS");
+        T.put("Shortcuts", "Raccourcis");
+        T.put("Network", "Réseau");
+        T.put("Display & Sound", "Image et son");
+        T.put("Manage Apps", "Gérer les applis");
+        T.put("Accessibility", "Accessibilité");
+        T.put("About", "À propos");
         T.put("Updates", "Mises à jour");
         T.put("Update available", "Mise à jour disponible");
         T.put("Check for a new version and install it.", "Cherchez une nouvelle version et installez-la.");
