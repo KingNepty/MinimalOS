@@ -12,6 +12,12 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Granted once from a computer (the setup command): lets the app turn its home-redirect service back on after an update -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <!-- The LED strip: Bluetooth LE (Android 11 needs location to scan, Android 12+ has its own scan and connect permissions) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!-- The app options menu can ask Android to uninstall an app (the system asks for confirmation) -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- To read the photos you put in Pictures/FreeMyTV for the Images background -->

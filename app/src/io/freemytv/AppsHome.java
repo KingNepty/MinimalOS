@@ -70,7 +70,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int favRows;
     private float panelH, headerTop, othersTop, linksLabelTop, linksTop;
     private int linksBase;     // the row where the shortcuts start
-    private int linkStart;     // the first shortcut in `apps`: favorites, then the other apps, then the shortcuts
+    private int linkStart;     // the first shortcut in `apps`: favorites, then the other apps, then the shortcuts, then the lights
+    private int lightStart;    // the first lights button (= apps.size() when there is no strip)
 
     private void metrics() {
         favRows = (fav + COLS - 1) / COLS;
@@ -82,13 +83,13 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float bottom = others > 0 ? (open ? othersTop + (othersRows - 1) * ROW_PITCH + TILE_H : headerTop + HEADER_H)
                 : favRows == 0 ? 0 : panelH;
         linksLabelTop = bottom + 44;
-        linksTop = linksLabelTop + 56;
+        linksTop = linksLabelTop + 56 + LIGHT_PAD;   // the pill starts one pad above the buttons
     }
 
     private float tileTop(int i) {
         if (i < fav) return PANEL_PAD_V + rowOf(i) * ROW_PITCH;
         if (i < linkStart) return othersTop + (rowOf(i) - favRows) * ROW_PITCH;
-        return linksTop + (rowOf(i) - linksBase) * ROW_PITCH;
+        return linksTop;   // the shortcuts and the lights share one row
     }
 
     /** The other apps are hidden while "All apps" is closed. */
@@ -465,6 +466,159 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         }
     }
 
+    // MARK: - Lights picker (the color swatches, the saturation and brightness bars)
+
+    private final Spring pickAnim = new Spring(0.34f, 0.9f, 0);
+    private static final int PICK_COLOR = 1, PICK_SAT = 2, PICK_DIM = 3, SWATCH_COLS = 6;
+    private boolean pickOpen;
+    private int pickKind, pickIndex, pickItem;
+    private String pickKey = "";
+    private final Runnable pickSend = this::sendPick;
+
+    private void openPicker(int item) {
+        String key = apps.get(item).key;
+        pickItem = item;
+        pickKind = key.equals("light-color") ? PICK_COLOR : key.equals("light-sat") ? PICK_SAT : PICK_DIM;
+        pickKey = pickKind == PICK_COLOR ? "pcolor" : pickKind == PICK_SAT ? "psat" : "pdim";
+        pickIndex = Lights.at(pickKey, pickCount(), pickKind == PICK_COLOR ? 0 : pickCount() - 1);
+        pickOpen = true;
+        pickAnim.target = 1;
+        if (pickKind != PICK_DIM) {   // changing the color turns the strip on
+            Lights.setOn(getContext(), true);
+            for (HomeApps.Item it : apps) if ("light-power".equals(it.key)) HomeApps.showLight(it);
+        }
+        invalidate();
+    }
+
+    private int pickCount() {
+        return pickKind == PICK_COLOR ? Lights.COLORS.length : pickKind == PICK_SAT ? Lights.SATURATION.length : Lights.LEVELS.length;
+    }
+
+    /** Sends what the picker shows now to the strip (a short pause after the last move, so quick scrolling sends once). */
+    private void sendPick() {
+        Context c = getContext();
+        if (pickKind == PICK_DIM) {
+            Lights.send(c, Lights.brightness(Lights.LEVELS[pickIndex]));
+        } else if (pickKind == PICK_COLOR) {
+            Lights.send(c, Lights.colorFrame(pickIndex, Lights.at("psat", Lights.SATURATION.length, Lights.SATURATION.length - 1)));
+        } else {
+            Lights.send(c, Lights.colorFrame(Lights.at("pcolor", Lights.COLORS.length, 0), pickIndex));
+        }
+    }
+
+    private void previewPick() {
+        handler.removeCallbacks(pickSend);
+        handler.postDelayed(pickSend, 70);
+    }
+
+    private void closePicker(boolean keep) {
+        handler.removeCallbacks(pickSend);
+        pickOpen = false;
+        pickAnim.target = 0;
+        if (keep) {
+            Lights.save(pickKey, pickIndex);
+            if (pickItem < apps.size()) HomeApps.showLight(apps.get(pickItem));
+            sendPick();
+        } else if (Lights.saved(pickKey)) {   // Back: the strip goes back to what it was
+            int was = pickIndex;
+            pickIndex = Lights.at(pickKey, pickCount(), 0);
+            sendPick();
+            pickIndex = was;
+        }
+        invalidate();
+    }
+
+    private boolean pickKey(KeyEvent e, boolean down, int code) {
+        int n = pickCount();
+        int step = 0;
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT: step = -1; break;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: step = 1; break;
+            case KeyEvent.KEYCODE_DPAD_UP: step = pickKind == PICK_COLOR ? -SWATCH_COLS : 0; break;
+            case KeyEvent.KEYCODE_DPAD_DOWN: step = pickKind == PICK_COLOR ? SWATCH_COLS : 0; break;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (down) {
+                    if (e.getRepeatCount() == 0) okDown = true;
+                } else {
+                    if (okDown && !e.isCanceled()) {
+                        click.open();
+                        closePicker(true);
+                    }
+                    okDown = false;
+                }
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_MENU:
+                if (!down) closePicker(false);
+                return true;
+            default:
+                return false;
+        }
+        if (down && step != 0) {
+            int next = pickIndex + step;
+            if (next >= 0 && next < n && next != pickIndex) {
+                pickIndex = next;
+                click.move();
+                previewPick();
+                invalidate();
+            }
+        }
+        return true;
+    }
+
+    private void drawPicker(Canvas c) {
+        float f = Ui.clamp(pickAnim.value);
+        fill.setColor(Ui.alpha(0xFF000000, 0.72f * f));
+        c.drawRect(0, 0, w, h, fill);
+        float cx = w / 2f;
+        String title = pickKind == PICK_COLOR ? Ui.tr("Cor", "Color") : pickKind == PICK_SAT ? Ui.tr("Saturação", "Saturation") : Ui.tr("Brilho", "Brightness");
+        sheetTitle.setAlpha(Math.round(255 * f));
+        c.drawText(title, cx, 210 * k, sheetTitle);
+        if (pickKind == PICK_COLOR) {
+            float pitch = 150 * k, r = 46 * k, left = cx - pitch * (SWATCH_COLS - 1) / 2, top = 340 * k;
+            for (int i = 0; i < Lights.COLORS.length; i++) {
+                float x = left + (i % SWATCH_COLS) * pitch, y = top + (i / SWATCH_COLS) * pitch;
+                int[] rgb = Lights.COLORS[i];
+                boolean on = i == pickIndex;
+                fill.setColor(Ui.alpha(0xFF000000 | rgb[0] << 16 | rgb[1] << 8 | rgb[2], f));
+                c.drawCircle(x, y, on ? r * 1.12f : r, fill);
+                if (on) {
+                    float was = stroke.getStrokeWidth();
+                    stroke.setStrokeWidth(5 * k);
+                    stroke.setColor(Ui.alpha(0xFFFFFFFF, f));
+                    c.drawCircle(x, y, r * 1.12f + 9 * k, stroke);
+                    stroke.setStrokeWidth(was);
+                }
+            }
+            String[] name = Lights.COLOR_NAMES[pickIndex];
+            c.drawText(Ui.tr(name[0], name[1]), cx, top + pitch + 130 * k, sheetTitle);
+        } else {
+            int n = pickCount();
+            float segW = 80 * k, gap = 14 * k, total = n * segW + (n - 1) * gap, left = cx - total / 2, top = 400 * k, segH = 90 * k;
+            int[] base = Lights.COLORS[Lights.at("pcolor", Lights.COLORS.length, 0)];
+            for (int i = 0; i < n; i++) {
+                tmp.set(left + i * (segW + gap), top, left + i * (segW + gap) + segW, top + segH);
+                int color;
+                if (i > pickIndex) {
+                    color = 0x2EFFFFFF;
+                } else if (pickKind == PICK_SAT) {
+                    float s = Lights.SATURATION[i] / 100f;
+                    color = 0xFF000000 | Math.round(base[0] * s + 255 * (1 - s)) << 16 | Math.round(base[1] * s + 255 * (1 - s)) << 8
+                            | Math.round(base[2] * s + 255 * (1 - s));
+                } else {
+                    int v = Math.round(255 * (0.35f + 0.65f * (i + 1) / n));
+                    color = 0xFF000000 | v << 16 | v << 8 | v;
+                }
+                fill.setColor(Ui.alpha(color, f));
+                c.drawRoundRect(tmp, 18 * k, 18 * k, fill);
+            }
+            int value = pickKind == PICK_SAT ? Lights.SATURATION[pickIndex] : Lights.LEVELS[pickIndex];
+            c.drawText(value + "%", cx, top + segH + 110 * k, sheetTitle);
+        }
+    }
+
     private void kick(int dx, int dy) {
         if (dx == 0 && dy == 0) return;
         tiltY.value = 9f * dx;
@@ -514,6 +668,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), stroke = new Paint(Paint.ANTI_ALIAS_FLAG),
             tilePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG),
             shadowPaint = new Paint(Paint.FILTER_BITMAP_FLAG), glowPaint = new Paint(), vignette = new Paint();
+    private Paint subValuePaint;
     private Paint greetingPaint, clockPaint, suffixPaint, datePaint, namePaint, pillText, sheetTitle, sheetRow, hint;
     private Bitmap tileShadow;
     private float shadowFor;
@@ -585,6 +740,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (!animated) sheet.snap(0);
         menuOpen = false;
         menuAnim.snap(0);
+        pickOpen = false;
+        pickAnim.snap(0);
         // The home comes back where it was left: the last app that was selected (not the first one).
         String last = Prefs.lastApp();
         int at = 0;
@@ -629,19 +786,22 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             }
             final int linkFrom = all.size();
             all.addAll(HomeApps.systemShortcuts(c));
+            final int lightFrom = all.size();
+            all.addAll(HomeApps.lightButtons(c));
             final int[] colors = new int[all.size()];
             for (int i = 0; i < colors.length; i++) colors[i] = brandOf(all.get(i).tile);
             final List<HomeApps.Item> in = HomeApps.allInputs(c);
-            handler.post(() -> apply(all, favorites, linkFrom, colors, in));
+            handler.post(() -> apply(all, favorites, linkFrom, lightFrom, colors, in));
         });
     }
 
-    private void apply(List<HomeApps.Item> list, int favorites, int linkFrom, int[] colors, List<HomeApps.Item> in) {
+    private void apply(List<HomeApps.Item> list, int favorites, int linkFrom, int lightFrom, int[] colors, List<HomeApps.Item> in) {
         String keep = index < apps.size() ? (apps.get(index).pkg != null ? apps.get(index).pkg : apps.get(index).key) : null;
         if (keep == null) keep = Prefs.lastApp().isEmpty() ? null : Prefs.lastApp();
         apps = list;
         fav = favorites;
         linkStart = linkFrom;
+        lightStart = lightFrom;
         metrics();
         brand = colors;
         inputs = in;
@@ -704,6 +864,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         capTitle.setShadowLayer(10 * k, 0, 2 * k, 0xAA000000);
         capSub.setShadowLayer(8 * k, 0, 2 * k, 0xAA000000);
         namePaint = Ui.text(Ui.light, 66 * k, 0xFFFFFFFF);
+        subValuePaint = Ui.text(Ui.regular, 48 * k, 0xB3FFFFFF);
         pillText = Ui.text(Ui.semibold, 25 * k, 0xFFFFFFFF);
         sheetTitle = Ui.text(Ui.displaySemibold, 40 * k, 0xFFFFFFFF);
         sheetTitle.setTextAlign(Paint.Align.CENTER);
@@ -739,7 +900,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !reveal.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled() || !splashDone;
+        boolean moving = !scrollRow.settled() || !glow.settled() || !nameIn.settled() || !sheet.settled() || !imgFade.settled() || !dim.settled() || !reveal.settled() || !tiltX.settled() || !tiltY.settled() || !menuAnim.settled() || !pickAnim.settled() || !splashDone;
         for (Spring s : pop) moving |= !s.settled();
         for (int i = 0; i < pills.size(); i++) moving |= !pillFocus[i].settled();
         if (moving) invalidate();
@@ -763,6 +924,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         dim.step(dt);
         tiltX.step(dt);
         menuAnim.step(dt);
+        pickAnim.step(dt);
         tiltY.step(dt);
         for (int i = 0; i < pop.length; i++) {
             pop[i].target = zone == GRID && i == index ? 1 : 0;
@@ -779,6 +941,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         drawGrid(c);
         if (sheet.value > 0.01f) drawSheet(c);
         if (menuAnim.value > 0.01f) drawMenu(c);
+        if (pickAnim.value > 0.01f) drawPicker(c);
         if (reveal.value < 0.995f) {
             fill.setColor(Ui.alpha(0xFF000000, 0.55f * (1 - Ui.clamp(reveal.value))));
             c.drawRect(0, 0, w, h, fill);
@@ -923,8 +1086,18 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         namePaint.setAlpha(Math.round(255 * f));
         String name = zone == HEADER ? Ui.tr("Todos os apps", "All Apps") : apps.get(index).label;
         float x = MARGIN * k;
-        c.drawText(TextUtils.ellipsize(name, new android.text.TextPaint(namePaint), 1500 * k, TextUtils.TruncateAt.END).toString(),
-                x - Ui.leftBearing(namePaint, name), (650 + 14 * (1 - f)) * k, namePaint);
+        float y = (650 + 14 * (1 - f)) * k;
+        String shown = TextUtils.ellipsize(name, new android.text.TextPaint(namePaint), 1500 * k, TextUtils.TruncateAt.END).toString();
+        c.drawText(shown, x - Ui.leftBearing(namePaint, name), y, namePaint);
+        HomeApps.Item hovered = zone == HEADER ? null : apps.get(index);
+        if (hovered != null && hovered.kind == HomeApps.LIGHT && !hovered.sub.isEmpty()) {
+            // "Color | Blue": the value after the name, in its own color when it has one
+            float sx = x + namePaint.measureText(shown) + 34 * k;
+            fill.setColor(Ui.alpha(0x59FFFFFF, f));
+            c.drawRect(sx - 17 * k, y - 50 * k, sx - 15 * k, y + 2 * k, fill);
+            subValuePaint.setColor(Ui.alpha(hovered.subColor != 0 ? hovered.subColor : 0xB3FFFFFF, f));
+            c.drawText(hovered.sub, sx + 10 * k, y, subValuePaint);
+        }
     }
 
     // The favorites (the shelf) fill the first rows; every other app starts on a row of its own, never in a favorites row.
@@ -933,12 +1106,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private int slot(int i) {
         if (i < fav) return i;
         int favRows = (fav + COLS - 1) / COLS;
-        if (i < linkStart) return favRows * COLS + (i - fav);
-        return linksBase * COLS + (i - linkStart);
+        return favRows * COLS + (i - fav);
     }
 
-    private int rowOf(int i) { return slot(i) / COLS; }
-    private int colOf(int i) { return slot(i) % COLS; }
+    // The shortcuts and the lights are one row of icon buttons: positions in it are just their order.
+    private int rowOf(int i) { return i >= linkStart ? linksBase : slot(i) / COLS; }
+    private int colOf(int i) { return i >= linkStart ? i - linkStart : slot(i) % COLS; }
 
     /** The app in the row `row` that is nearest to column `col` (-1 if the row has none). */
     private int inRow(int row, int col) {
@@ -959,10 +1132,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     }
 
     private void tileRect(int i, float rowScroll, RectF out) {
-        if (i >= linkStart) {   // the shortcuts are small glass buttons
-            float lx = gridLeft() + colOf(i) * (LINK_W + LINK_GAP) * k;
+        if (i >= linkStart) {   // the shortcuts and the lights are small icon buttons, each group in its own pill
+            float left = i < lightStart ? gridLeft() : lightsLeft();
+            int pos = i < lightStart ? i - linkStart : i - lightStart;
+            float lx = left + (LIGHT_PAD + pos * (LIGHT_S + LIGHT_GAP)) * k;
             float ly = (PANEL_TOP + tileTop(i) - rowScroll * SCROLL_UNIT) * k;
-            out.set(lx, ly, lx + LINK_W * k, ly + LINK_H * k);
+            out.set(lx, ly, lx + LIGHT_S * k, ly + LIGHT_S * k);
             return;
         }
         float x = gridLeft() + colOf(i) * (TILE_W + GAP_X) * k;
@@ -970,13 +1145,38 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         out.set(x, y, x + TILE_W * k, y + TILE_H * k);
     }
 
-    /** "Shortcuts" above the shelf of the TV's settings screens. */
+    private static float pillWidth(int n) { return 2 * LIGHT_PAD + n * LIGHT_S + (n - 1) * LIGHT_GAP; }
+
+    /** Where the lights' pill starts: after the shortcuts' pill, on the same line. */
+    private float lightsLeft() {
+        int shortcuts = lightStart - linkStart;
+        return gridLeft() + (shortcuts > 0 ? (pillWidth(shortcuts) + SECTION_GAP) * k : 0);
+    }
+
+    /** "Shortcuts" and "Lights" above their pills. */
     private void drawLinksLabel(Canvas c, float shift) {
-        if (linkStart >= apps.size()) return;
-        float y = PANEL_TOP + linksLabelTop - shift, a = fadeTop(y);
+        if (linkStart < lightStart) drawSectionLabel(c, Ui.tr("Atalhos", "Shortcuts"), gridLeft(), linksLabelTop - shift);
+        if (lightStart < apps.size()) drawSectionLabel(c, Ui.tr("Luzes", "Lights"), lightsLeft(), linksLabelTop - shift);
+    }
+
+    /** The glass pill a row of icon buttons sits in, like the favorites' panel (no borders on the buttons themselves). */
+    private void drawPill(Canvas c, float shift, float left, float tilesTop, int n) {
+        float top = PANEL_TOP + tilesTop - LIGHT_PAD - shift, height = LIGHT_S + 2 * LIGHT_PAD;
+        float a = fadeTop(top + height - 40);
+        if (a <= 0.01f || top > 1080) return;
+        float right = left + pillWidth(n) * k;
+        panel.set(left, top * k, right, (top + height) * k);
+        fill.setColor(Ui.alpha(0x14FFFFFF, a));
+        c.drawRoundRect(panel, height / 2 * k, height / 2 * k, fill);
+        stroke.setColor(Ui.alpha(0x2EFFFFFF, a));
+        c.drawRoundRect(panel, height / 2 * k, height / 2 * k, stroke);
+    }
+
+    private void drawSectionLabel(Canvas c, String text, float x, float top) {
+        float y = PANEL_TOP + top, a = fadeTop(y);
         if (a <= 0.01f || y > 1080) return;
         datePaint.setAlpha(Math.round(255 * 0.8f * a));
-        c.drawText(Ui.tr("Atalhos", "Shortcuts"), gridLeft(), (y + 34) * k, datePaint);
+        c.drawText(text, x, (y + 34) * k, datePaint);
         datePaint.setAlpha(255);
     }
 
@@ -997,6 +1197,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         }
         if (linkStart > fav) drawHeader(c, shift);
         drawLinksLabel(c, shift);
+        if (linkStart < lightStart) drawPill(c, shift, gridLeft(), linksTop, lightStart - linkStart);
+        if (lightStart < apps.size()) drawPill(c, shift, lightsLeft(), linksTop, apps.size() - lightStart);
         for (int pass = 0; pass < 2; pass++) {
             for (int i = 0; i < apps.size(); i++) {
                 if (!visible(i) || (pass == 1) != (i == index && zone == GRID)) continue;
@@ -1060,7 +1262,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         }
     }
 
-    private static final float LINK_W = 252, LINK_H = 128, LINK_GAP = 24;
+    private static final float LINK_W = 252, LINK_H = 128, LINK_GAP = 24, LIGHT_S = 112, LIGHT_PAD = 20, LIGHT_GAP = 14, SECTION_GAP = 48;   // the lights: icon-only squares inside one glass pill
     private Paint linkText;
     private Bitmap linkShadow;
 
@@ -1082,26 +1284,29 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         float f = Ui.clamp(pop[i].value), s = 1 + 0.08f * pop[i].value;
         float bw = tmp.width(), bh = tmp.height(), cx = tmp.centerX(), cy = tmp.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
-        float r = 24 * k * s;
+        boolean iconOnly = true;   // the shortcuts and the lights are icon-only squares in a pill
+        float r = 36 * k * s;
         if (f > 0.02f) {
             float pad = SHADOW_PAD * k;
             c.save();
             c.translate(cx, cy);
             c.scale(s, s);
-            tmp.set(-bw / 2 - pad, -bh / 2 - pad + 12 * k * f, bw / 2 + pad, bh / 2 + pad + 12 * k * f);
-            shadowPaint.setAlpha(Math.round(255 * 0.55f * f * alpha));
+            float drop = (iconOnly ? 3 : 12) * k * f;   // the lights' shadow stays inside the pill
+            tmp.set(-bw / 2 - pad, -bh / 2 - pad + drop, bw / 2 + pad, bh / 2 + pad + drop);
+            shadowPaint.setAlpha(Math.round(255 * (iconOnly ? 0.16f : 0.55f) * f * alpha));
             c.drawBitmap(linkShadow(bw, bh), null, tmp, shadowPaint);
             c.restore();
         }
-        fill.setColor(Ui.alpha(blend(0x2AFFFFFF, 0xFFF5F5F7, f), alpha));
+        fill.setColor(Ui.alpha(blend(iconOnly ? 0x00FFFFFF : 0x2AFFFFFF, 0xFFF5F5F7, f), alpha));
         c.drawRoundRect(cell, r, r, fill);
-        if (f < 0.98f) {
+        if (f < 0.98f && !iconOnly) {
             stroke.setColor(Ui.alpha(0xFFFFFFFF, 0.22f * (1 - f) * alpha));
             c.drawRoundRect(cell, r, r, stroke);
         }
         int ink = blend(0xFFFFFFFF, INK, f);
         HomeApps.Item it = apps.get(i);
-        Symbols.draw(getContext(), c, it.symbol, cx, cell.top + cell.height() * 0.38f, 46 * k * s, Ui.alpha(ink, alpha));
+        Symbols.draw(getContext(), c, it.symbol, cx, iconOnly ? cell.centerY() : cell.top + cell.height() * 0.38f, 46 * k * s, Ui.alpha(ink, alpha));
+        if (iconOnly) return;
         linkText.setColor(Ui.alpha(ink, alpha));
         c.drawText(TextUtils.ellipsize(it.label, new android.text.TextPaint(linkText), cell.width() - 18 * k, TextUtils.TruncateAt.END).toString(),
                 cx, cell.bottom - 22 * k * s, linkText);
@@ -1210,6 +1415,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         if (zone == GRID && index < apps.size()) {
             HomeApps.Item it = apps.get(index);
             Prefs.put("lastApp", it.pkg != null ? it.pkg : it.key == null ? "" : it.key);
+            if (it.kind == HomeApps.LIGHT) Lights.warm(getContext());
         }
         int target = bgMode.equals("static") ? staticColor : index < brand.length ? brand[index] : DARK;
         int current = blend(glowFrom, glowTo, Ui.clamp(glow.value));
@@ -1232,6 +1438,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     boolean onKey(KeyEvent e) {
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         int code = e.getKeyCode();
+        if (pickOpen) return pickKey(e, down, code);
         if (menuOpen) return menuKey(e, down, code);
         if (sheetOpen) return sheetKey(e, down, code);
         switch (code) {
@@ -1336,7 +1543,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         int n = apps.size();
         if (zone == GRID) {
             int next = index;
-            int lo = index < fav ? 0 : index < linkStart ? fav : linkStart;
+            int lo = index < fav ? 0 : index < linkStart ? fav : linkStart;   // the shortcuts and the lights are one row
             int hi = index < fav ? fav - 1 : index < linkStart ? linkStart - 1 : n - 1;
             if (dx != 0) {
                 next = Math.max(lo, Math.min(hi, index + dx));
@@ -1456,6 +1663,13 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                 Prefs.put("allAppsSort", az ? "az" : "recent");
                 reload();
             }
+            return;
+        }
+        if (apps.get(index).kind == HomeApps.LIGHT) {   // a lights button: no screen to open
+            String key = apps.get(index).key;
+            if (key.equals("light-power")) HomeApps.light(getContext(), apps.get(index));
+            else openPicker(index);
+            invalidate();
             return;
         }
         tileRect(index, scrollRow.value, tmp);

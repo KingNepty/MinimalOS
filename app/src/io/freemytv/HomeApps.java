@@ -61,6 +61,8 @@ final class HomeApps {
     static final int SEARCH = 8;
     /** A shortcut to one of the TV's own settings screens (the "Shortcuts" shelf under All apps). */
     static final int LINK = 9;
+    /** A button for the LED strip (Lights); pressing it sends a command and stays on the home screen. */
+    static final int LIGHT = 10;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -68,6 +70,8 @@ final class HomeApps {
         int kind;
         String key, label, pkg, inputId, number;
         String symbol;      // icon for the shortcuts and special cards
+        String sub = "";      // the lights: the value shown next to the name
+        int subColor;       // ...in this color (0 = the usual one)
         Bitmap tile;        // 16:9 card (apps and specials)
         Bitmap logo;        // colored logo with no background (shelf); null = use the card
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
@@ -465,6 +469,56 @@ final class HomeApps {
             out.add(it);
         }
         return out;
+    }
+
+    /** The LED strip's buttons, next to the shortcuts; none until a strip is chosen in Settings. */
+    static List<Item> lightButtons(Context c) {
+        List<Item> out = new ArrayList<>();
+        if (!Lights.ready()) return out;
+        out.add(shortcut(LIGHT, "light-power", Ui.tr("Luzes", "Lights"), ""));
+        out.add(shortcut(LIGHT, "light-color", Ui.tr("Cor", "Color"), "sparkles"));
+        out.add(shortcut(LIGHT, "light-sat", Ui.tr("Saturação", "Saturation"), "foggy"));
+        out.add(shortcut(LIGHT, "light-dim", Ui.tr("Brilho", "Brightness"), "sunset"));
+        for (Item it : out) showLight(it);
+        return out;
+    }
+
+    /** The power button toggles at once; the other three open a picker (the home screen draws it). */
+    static void light(Context c, Item it) {
+        if (!it.key.equals("light-power")) return;
+        Lights.setOn(c, !Lights.isOn());
+        showLight(it);
+    }
+
+    /** A light button's icon and value: the power button shows what pressing it does; the others what they last set. */
+    static void showLight(Item it) {
+        it.subColor = 0;
+        switch (it.key) {
+            case "light-power": {
+                boolean on = Lights.isOn();
+                it.symbol = on ? "bedtime" : "sunny";
+                it.sub = on ? Ui.tr("Ligadas", "On") : Ui.tr("Desligadas", "Off");
+                break;
+            }
+            case "light-color":
+                if (Lights.saved("pcolor")) {
+                    int i = Lights.at("pcolor", Lights.COLORS.length, 0);
+                    it.sub = Ui.tr(Lights.COLOR_NAMES[i][0], Lights.COLOR_NAMES[i][1]);
+                    int[] rgb = Lights.COLORS[i];
+                    // a little toward white, so pure blue is readable on a dark background
+                    it.subColor = 0xFF000000 | (rgb[0] + (255 - rgb[0]) * 35 / 100) << 16 | (rgb[1] + (255 - rgb[1]) * 35 / 100) << 8
+                            | (rgb[2] + (255 - rgb[2]) * 35 / 100);
+                } else {
+                    it.sub = "—";
+                }
+                break;
+            case "light-sat":
+                it.sub = Lights.SATURATION[Lights.at("psat", Lights.SATURATION.length, Lights.SATURATION.length - 1)] + "%";
+                break;
+            default:
+                it.sub = Lights.LEVELS[Lights.at("pdim", Lights.LEVELS.length, Lights.LEVELS.length - 1)] + "%";
+                break;
+        }
     }
 
     /** A dark card with the icon and the name under it. */

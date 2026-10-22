@@ -138,7 +138,7 @@ public class SettingsActivity extends Activity {
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, APPS = 2, PREFS = 3, SHELF = 4, HIDDEN = 5, CITY = 6, SETUP = 7,
-                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10, UPDATES = 11;
+                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10, UPDATES = 11, LIGHTS = 12;
         private static final int VISIBLE = 10;   // rows of a list on screen at once
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104,
                 MAIN_H = 62, MAIN_GAP = 8;
@@ -284,7 +284,7 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean isList(int s) {
-            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY || s == UPDATES;
+            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY || s == UPDATES || s == LIGHTS;
         }
 
         /** The Preferences menu and the three screens under it. */
@@ -315,6 +315,8 @@ public class SettingsActivity extends Activity {
                 buildSetup();
             } else if (s == UPDATES) {
                 if (updateInfo == null) checkUpdates(false);
+            } else if (s == LIGHTS) {
+                findStrips();
             } else if (s == PREFS) {
                 checkUpdates(true);
             }
@@ -332,6 +334,7 @@ public class SettingsActivity extends Activity {
                 case PREFS_BG: return Ui.tr("Fundo", "Background");
                 case PREFS_REGION: return Ui.tr("Região e idioma", "Region & Language");
                 case UPDATES: return Ui.tr("Atualizações", "Updates");
+                case LIGHTS: return Ui.tr("Luzes", "Lights");
                 case SHELF: return Ui.tr("Apps do Início", "Shelf Apps");
                 case HIDDEN: return Ui.tr("Apps ocultos", "Hidden Apps");
                 case CITY: return Ui.tr("Cidade", "City");
@@ -392,12 +395,16 @@ public class SettingsActivity extends Activity {
                     region.symbol = "tv";
                     region.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
                     region.desc = Ui.tr("Cidade (clima), idioma e temperatura.", "City (weather), language and temperature.");
+                    Row lights = new Row(Ui.tr("Luzes", "Lights"), "g_lights");
+                    lights.symbol = "sunny";
+                    lights.value = Lights.ready() ? Lights.name() : Ui.tr("Não definida", "Not set");
+                    lights.desc = Ui.tr("Controle a fita de LED por Bluetooth.", "Control your LED strip over Bluetooth.");
                     Row update = new Row(Ui.tr("Atualizações", "Updates"), "g_update");
                     update.symbol = "sync";
                     update.value = updateInfo != null && Updater.newer(updateInfo.version, Updater.installed(getContext()))
                             ? Ui.tr("Nova versão", "Update available") : Updater.installed(getContext());
                     update.desc = Ui.tr("Veja se há uma versão nova e instale.", "Check for a new version and install it.");
-                    for (Row r : new Row[] {home, bg, region, update}) {
+                    for (Row r : new Row[] {home, bg, lights, region, update}) {
                         r.chevron = true;
                         rows.add(r);
                     }
@@ -426,6 +433,37 @@ public class SettingsActivity extends Activity {
                         String notes = updateInfo.notes.replace("\r", "").replace("\n", " ").replaceAll("[#*`]", "").trim();
                         install.desc = notes.length() > 220 ? notes.substring(0, 217) + "…" : notes;
                         rows.add(install);
+                    }
+                    break;
+                }
+                case LIGHTS: {
+                    Row current = new Row(Ui.tr("Fita de LED", "LED strip"), "cur");
+                    current.value = Lights.ready() ? Lights.name() : Ui.tr("Não definida", "Not set");
+                    current.desc = Ui.tr("Os botões de luz aparecem no Início depois que você escolhe uma fita.",
+                            "The light buttons show on the home screen once you choose a strip.");
+                    rows.add(current);
+                    Row scan = new Row(Ui.tr("Procurar fitas", "Search for strips"), "scan");
+                    scan.value = scanning ? Ui.tr("Procurando…", "Searching…") : "";
+                    scan.desc = Ui.tr("Ligue a fita e feche o app do celular: ela aceita uma conexão por vez.",
+                            "Turn the strip on and close its phone app: it accepts one connection at a time.");
+                    rows.add(scan);
+                    for (int i = 0; i < strips.size(); i++) {
+                        String[] st = strips.get(i);
+                        Row r = new Row(st[0], "s" + i);
+                        int rssi = Integer.parseInt(st[2]);
+                        r.value = rssi > -65 ? Ui.tr("Perto", "Near") : rssi > -80 ? Ui.tr("Médio", "Medium") : Ui.tr("Longe", "Far");
+                        r.check = st[1].equals(Prefs.lights("address"));
+                        r.desc = Ui.tr("OK: usar esta fita. Escolha a que tem o nome da sua (o nome está no app do celular).",
+                                "OK: use this strip. Pick the one with your strip's name (it shows in its phone app).");
+                        rows.add(r);
+                    }
+                    if (Lights.ready()) {
+                        Row test = new Row(Ui.tr("Testar: ligar", "Test: turn on"), "test");
+                        test.desc = Ui.tr("Liga a fita escolhida.", "Turns the chosen strip on.");
+                        rows.add(test);
+                        Row forget = new Row(Ui.tr("Esquecer a fita", "Forget the strip"), "forget");
+                        forget.desc = Ui.tr("Remove os botões de luz do Início.", "Removes the light buttons from the home screen.");
+                        rows.add(forget);
                     }
                     break;
                 }
@@ -512,6 +550,41 @@ public class SettingsActivity extends Activity {
                 default:
                     break;
             }
+        }
+
+        // Lights (the LED strip)
+        private final List<String[]> strips = new ArrayList<>();   // name, address, signal
+        private boolean scanning;
+
+        /** Looks for strips nearby (Android 11 wants the location permission to scan; it's asked once). */
+        private void findStrips() {
+            if (scanning) return;
+            String[] needed = android.os.Build.VERSION.SDK_INT >= 31
+                    ? new String[] {"android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT"}
+                    : new String[] {android.Manifest.permission.ACCESS_FINE_LOCATION};
+            if (getContext().checkSelfPermission(needed[0]) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    && getContext() instanceof android.app.Activity) {
+                ((android.app.Activity) getContext()).requestPermissions(needed, 8);
+                say(Ui.tr("Permita o acesso e procure de novo.", "Allow access, then search again."));
+                return;
+            }
+            scanning = true;
+            strips.clear();
+            Lights.scan(getContext(), new Lights.Found() {
+                @Override public void strip(String name, String address, int rssi) {
+                    strips.add(new String[] {name, address, String.valueOf(rssi)});
+                    java.util.Collections.sort(strips, (a, b) -> Integer.parseInt(b[2]) - Integer.parseInt(a[2]));
+                    if (screen == LIGHTS) buildRows();
+                    invalidate();
+                }
+
+                @Override public void done() {
+                    scanning = false;
+                    if (screen == LIGHTS) buildRows();
+                    invalidate();
+                }
+            });
+            buildRows();
         }
 
         // Updates (GitHub releases)
@@ -827,6 +900,8 @@ public class SettingsActivity extends Activity {
                     return new String[] {Ui.tr("OK ou ← →: mudar", "OK or ← →: change")};
                 case CITY:
                     return new String[] {Ui.tr("OK: buscar ou escolher", "OK: search or choose")};
+                case LIGHTS:
+                    return new String[] {Ui.tr("OK: escolher a fita; ela acende para você ver qual é", "OK: choose a strip; it lights up so you can see which one")};
                 default:
                     return new String[0];
             }
@@ -1008,8 +1083,9 @@ public class SettingsActivity extends Activity {
                 case CITY: enter(PREFS_REGION, 0); break;
                 case PREFS_HOME: enter(PREFS, 0); break;
                 case PREFS_BG: enter(PREFS, 1); break;
-                case PREFS_REGION: enter(PREFS, 2); break;
-                case UPDATES: enter(PREFS, 3); break;
+                case PREFS_REGION: enter(PREFS, 3); break;
+                case UPDATES: enter(PREFS, 4); break;
+                case LIGHTS: enter(PREFS, 2); break;
                 case PREFS: enter(MAIN, 2); break;
                 default: enter(MAIN, 0); break;
             }
@@ -1238,8 +1314,27 @@ public class SettingsActivity extends Activity {
                 return;
             } else if (screen == PREFS) {
                 String group = rows.get(focus).tag;
-                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG
+                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG : group.equals("g_lights") ? LIGHTS
                         : group.equals("g_update") ? UPDATES : PREFS_REGION, 0);
+                return;
+            } else if (screen == LIGHTS) {
+                String tag = rows.get(focus).tag;
+                if (tag.equals("scan")) {
+                    findStrips();
+                } else if (tag.equals("test")) {
+                    Lights.send(c, Lights.on());
+                    say(Ui.tr("Enviado", "Sent"));
+                } else if (tag.equals("forget")) {
+                    Lights.forget();
+                    focus = 0;
+                    buildRows();
+                } else if (tag.startsWith("s")) {
+                    String[] st = strips.get(Integer.parseInt(tag.substring(1)));
+                    Lights.choose(st[0], st[1]);
+                    Lights.send(c, Lights.on());   // so you can see which one lit up
+                    say(Ui.tr("Fita escolhida", "Strip chosen"));
+                    buildRows();
+                }
                 return;
             } else if (screen == UPDATES) {
                 String tag = rows.get(focus).tag;

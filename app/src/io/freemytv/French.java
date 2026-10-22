@@ -20,6 +20,48 @@ final class French {
                 "L'écran d'accueil de MinimalOS a rencontré un problème.\nRetour à l'écran d'accueil d'origine de la TV…");
         T.put("Live TV",
                 "TV en direct");
+        T.put("Lights on", "Allumer");
+        T.put("On", "Allumées");
+        T.put("Off", "Éteintes");
+        T.put("Lights off", "Éteindre");
+        T.put("Color", "Couleur");
+        T.put("Brightness", "Luminosité");
+        T.put("Warm", "Chaud");
+        T.put("White", "Blanc");
+        T.put("Red", "Rouge");
+        T.put("Green", "Vert");
+        T.put("Blue", "Bleu");
+        T.put("Purple", "Violet");
+        T.put("Pink", "Rose");
+        T.put("Orange", "Orange");
+        T.put("Yellow", "Jaune");
+        T.put("Lime", "Citron vert");
+        T.put("Cyan", "Cyan");
+        T.put("Magenta", "Magenta");
+        T.put("Saturation", "Saturation");
+        T.put("Lights", "Lumières");
+        T.put("LED strip", "Ruban LED");
+        T.put("Control your LED strip over Bluetooth.", "Commandez votre ruban LED en Bluetooth.");
+        T.put("The light buttons show on the home screen once you choose a strip.",
+                "Les boutons de lumière apparaissent sur l'accueil une fois le ruban choisi.");
+        T.put("Search for strips", "Chercher des rubans");
+        T.put("Searching…", "Recherche…");
+        T.put("Turn the strip on and close its phone app: it accepts one connection at a time.",
+                "Allumez le ruban et fermez son appli sur le téléphone : il n'accepte qu'une connexion à la fois.");
+        T.put("Near", "Proche");
+        T.put("Medium", "Moyen");
+        T.put("Far", "Loin");
+        T.put("OK: use this strip. Pick the one with your strip's name (it shows in its phone app).",
+                "OK : utiliser ce ruban. Choisissez celui qui porte le nom du vôtre (visible dans son appli).");
+        T.put("Test: turn on", "Test : allumer");
+        T.put("Turns the chosen strip on.", "Allume le ruban choisi.");
+        T.put("Forget the strip", "Oublier le ruban");
+        T.put("Removes the light buttons from the home screen.", "Retire les boutons de lumière de l'accueil.");
+        T.put("Allow access, then search again.", "Autorisez l'accès, puis cherchez à nouveau.");
+        T.put("Sent", "Envoyé");
+        T.put("Strip chosen", "Ruban choisi");
+        T.put("OK: choose a strip; it lights up so you can see which one",
+                "OK : choisir un ruban ; il s'allume pour que vous voyiez lequel");
         T.put("All Apps",
                 "Toutes les applis");
         T.put("Settings",

@@ -95,6 +95,11 @@ TVs that don't run Google TV or Android TV (Samsung, LG and others): the way is 
 - The Apps home background (Settings → Preferences → Background): dynamic (the focused app's color), one color from a
   palette, or images: the movie and show art the app already downloaded plus any photos in `Pictures/FreeMyTV` on the TV
   (needs `adb shell pm grant io.freemytv android.permission.READ_EXTERNAL_STORAGE`; Settings also asks for it).
+- Lights (Settings → Preferences → Lights): an LED strip with an ELK-BLEDOM controller (the "duoCo Strip" app) over Bluetooth LE,
+  written in `Lights`. Settings lists the strips the TV hears (by name and signal; neighbours' strips show too, so the person
+  picks theirs) and the Apps home gets On, Off, Color and Brightness buttons. The strip takes one connection at a time, so the
+  TV connects per command and hangs up. Android 11 needs the location permission to scan: `adb shell pm grant io.freemytv
+  android.permission.ACCESS_FINE_LOCATION` if the TV doesn't ask. Never send a command to a strip the person didn't choose.
 - Updates (Settings → Preferences → Updates) read the latest GitHub release of `update_repo` (config.properties, e.g. `KingNepty/MinimalOS`): tag `vX.Y` newer than `versionName` in the manifest, with the signed `.apk` attached. To release: bump `versionName`/`versionCode`, build, sign with the same keystore, upload the APK to a new release.
 - After any change, `./build.sh` must end with `Built FreeMyTV.apk`.
 

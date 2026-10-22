@@ -64,6 +64,9 @@ final class Prefs {
     static String bgColor() { return get("bgColor", "3A5BD9"); }
 
     /** The app that was selected last on the home screen (its package), so the home comes back to it. */
+    /** The LED strip: its saved name and address, and where the color and brightness buttons are. */
+    static String lights(String key) { return get("light_" + key, ""); }
+
     static String lastApp() { return get("lastApp", ""); }
 
     static void put(String key, String value) {
