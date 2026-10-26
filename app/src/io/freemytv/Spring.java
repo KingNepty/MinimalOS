@@ -3,12 +3,18 @@ package io.freemytv;
 /** Damped spring, like macOS animations: response (s) and damping (1 = no bounce). */
 final class Spring {
     float value, velocity, target;
-    private final float response, damping;
+    private float response;
+    private final float damping;
 
     Spring(float response, float damping, float initial) {
         this.response = response;
         this.damping = damping;
         value = target = initial;
+    }
+
+    /** Changes how long it takes to settle (about one response). */
+    void retune(float response) {
+        this.response = response;
     }
 
     void snap(float v) {

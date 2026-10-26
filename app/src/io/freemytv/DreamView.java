@@ -52,7 +52,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** One photo on screen: the image, its motion (zooming in or out, toward a corner) and its caption. */
     private static final class Slide {
-        final Recs.Pick pick;
+        final Recs.Pick pick;         // null for one of your own photos (no caption)
+        final String key;
         final Bitmap image, frost;
         final BitmapShader shader;    // the frosted version, for the clock's glass
         final float lightCaption, lightClock;
@@ -61,8 +62,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         final RenderNode caption = new RenderNode("caption");
         long startedAt;
 
-        Slide(Recs.Pick pick, Bitmap image, Bitmap frost, float lightCaption, float lightClock, int n) {
+        Slide(Recs.Pick pick, String key, Bitmap image, Bitmap frost, float lightCaption, float lightClock, int n) {
             this.pick = pick;
+            this.key = key;
             this.image = image;
             this.frost = frost;
             shader = new BitmapShader(frost, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
@@ -109,7 +111,39 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private final Paint black = new Paint();
     private final Paint shadowPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint glassPaint = new Paint();
-    private final Set<String> failed = new HashSet<>();     // Recs.key: a movie and a series can have the same ID
+    private final Set<String> failed = new HashSet<>();     // Entry.key: a movie and a series can have the same ID
+    private final java.util.Random random = new java.util.Random();
+
+    /** One picture the screensaver can show: a pick's art (with its caption) or one of your own photos. */
+    private static final class Entry {
+        final Recs.Pick pick;
+        final File file;
+        final String key;
+
+        Entry(Recs.Pick pick, File file) {
+            this.pick = pick;
+            this.file = file;
+            key = pick != null ? Recs.key(pick) : "file:" + file.getPath();
+        }
+    }
+
+    /** What Settings asks for: the TMDB art, your own photos, or both. */
+    private List<Entry> entries() {
+        String source = Prefs.standbySource();
+        List<Entry> out = new java.util.ArrayList<>();
+        if (!source.equals("mine")) {
+            for (Recs.Pick p : recs.showcase()) {
+                File f = recs.readyImage(p);
+                if (f != null) out.add(new Entry(p, f));
+            }
+        }
+        if (!source.equals("art")) {
+            List<File> mine = PhoneUpload.mine(getContext());
+            java.util.Collections.sort(mine);
+            for (File f : mine) out.add(new Entry(null, f));
+        }
+        return out;
+    }
     private RuntimeShader glassShader;
     private boolean running, dirty = true, chromeDirty = true;
     private boolean fallback;       // the aurora with the clock (no photos)
@@ -166,7 +200,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         startedAt = clock();
         lastFrame = 0;
         failed.clear();
-        fallback = recs.showcase().isEmpty();
+        fallback = entries().isEmpty();
         data.addListener(this);
         recs.addListener(this);
         data.refreshIfStale();
@@ -259,41 +293,48 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     /** Loads the next photo in the background (one at a time); once ready, it comes in at the right moment. */
     private void prepareNext() {
         if (!running || decoding || prepared != null) return;
-        List<Recs.Pick> list = recs.showcase();
-        if (list.isEmpty()) return;
+        List<Entry> list = entries();
+        if (list.isEmpty()) {
+            if (current == null) fallback = true;
+            return;
+        }
         Slide last = incoming != null ? incoming : current;
-        int start = 0;
-        if (last != null) {
-            for (int i = 0; i < list.size(); i++) {
-                if (Recs.key(list.get(i)).equals(Recs.key(last.pick))) {
-                    start = i + 1;
-                    break;
+        List<Entry> open = new java.util.ArrayList<>();
+        for (Entry e : list) if (!failed.contains(e.key)) open.add(e);
+        Entry pick = null;
+        if (!open.isEmpty()) {
+            if (Prefs.standbyRandom()) {
+                // Never the one just shown, unless it's the only one.
+                do pick = open.get(random.nextInt(open.size())); while (open.size() > 1 && last != null && pick.key.equals(last.key));
+            } else {
+                int start = 0;
+                if (last != null) {
+                    for (int i = 0; i < list.size(); i++) {
+                        if (list.get(i).key.equals(last.key)) {
+                            start = i + 1;
+                            break;
+                        }
+                    }
+                }
+                for (int i = 0; i < list.size() && pick == null; i++) {
+                    Entry e = list.get((start + i) % list.size());
+                    if (!failed.contains(e.key)) pick = e;
                 }
             }
-        }
-        Recs.Pick pick = null;
-        for (int i = 0; i < list.size() && pick == null; i++) {
-            Recs.Pick p = list.get((start + i) % list.size());
-            if (!failed.contains(Recs.key(p))) pick = p;
         }
         if (pick == null) {
             if (current == null) fallback = true;
             return;
         }
-        if (last != null && Recs.key(pick).equals(Recs.key(last.pick))) {
+        if (last != null && pick.key.equals(last.key)) {
             // Only one photo: the same one again, with a different motion.
-            prepared = newSlide(pick, last.image, last.frost, last.lightCaption, last.lightClock);
+            prepared = newSlide(pick.pick, pick.key, last.image, last.frost, last.lightCaption, last.lightClock);
             return;
         }
-        File file = recs.readyImage(pick);
-        if (file == null) {
-            failed.add(Recs.key(pick));   // the image is gone from disk: try the next one
-            prepareNext();
-            return;
-        }
+        final File file = pick.file;
         decoding = true;
         final int gen = generation;
-        final Recs.Pick chosen = pick;
+        final Entry chosen = pick;
         worker.execute(() -> {
             Bitmap[] images = null;
             float[] light = new float[2];
@@ -301,7 +342,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 images = Backdrop.photo(file, PW, PH, light);
                 images[0] = Backdrop.gpu(withScrims(images[0], light[0], light[1]));
             } catch (Exception | OutOfMemoryError e) {
-                AppLog.w("screensaver: photo for “" + chosen.title + "”: " + e.getMessage());
+                AppLog.w("screensaver: photo " + chosen.file.getName() + ": " + e.getMessage());
             }
             final Bitmap[] ready = images;
             handler.post(() -> {
@@ -312,18 +353,18 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                 }
                 decoding = false;
                 if (ready == null) {
-                    failed.add(Recs.key(chosen));
+                    failed.add(chosen.key);
                     prepareNext();
                     return;
                 }
-                prepared = newSlide(chosen, ready[0], ready[1], light[0], light[1]);
+                prepared = newSlide(chosen.pick, chosen.key, ready[0], ready[1], light[0], light[1]);
                 invalidate();
             });
         });
     }
 
-    private Slide newSlide(Recs.Pick pick, Bitmap image, Bitmap frost, float lightCaption, float lightClock) {
-        Slide s = new Slide(pick, image, frost, lightCaption, lightClock, slides++);
+    private Slide newSlide(Recs.Pick pick, String key, Bitmap image, Bitmap frost, float lightCaption, float lightClock) {
+        Slide s = new Slide(pick, key, image, frost, lightCaption, lightClock, slides++);
         if (w > 0) recordCaption(s);
         return s;
     }
@@ -674,6 +715,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private void recordCaption(Slide s) {
         RecordingCanvas c = s.caption.beginRecording(w, h);
         try {
+            if (s.pick == null) return;
             float x = MARGIN * k, metaBase = META_BASE * k, titleBase = metaBase - 58 * k;
             String title = s.pick.title == null ? "" : s.pick.title;
             StaticLayout t = StaticLayout.Builder.obtain(title, 0, title.length(), titlePaint, Math.round(TITLE_W * k))

@@ -57,6 +57,22 @@ final class PhoneUpload {
         return out;
     }
 
+    /** Every picture of the person's own: the ones sent from the phone and the ones in Pictures/FreeMyTV. */
+    static List<File> mine(Context c) {
+        List<File> out = new ArrayList<>();
+        for (File d : new File[] {c.getExternalFilesDir("wallpapers"), new File(
+                android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "FreeMyTV")}) {
+            File[] in = d == null ? null : d.listFiles();
+            if (in == null) continue;
+            for (File f : in) {
+                String n = f.getName().toLowerCase(java.util.Locale.ROOT);
+                if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")) out.add(f);
+            }
+        }
+        out.addAll(pictures(c));
+        return out;
+    }
+
     /** Starts listening; false if no port is free. */
     boolean start() {
         for (int p = 8080; p < 8090 && server == null; p++) {

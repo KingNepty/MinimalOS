@@ -172,7 +172,10 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private final Paint dimPaint = new Paint();
     private static final ExecutorService IMAGES = Executors.newSingleThreadExecutor();
     private boolean imgLoading;
-    private int imgTick, imgPick = (int) (System.currentTimeMillis() % 1000);
+    private long imgAt;           // when the picture on screen came in
+    private int imgPick;
+    private java.io.File imgLast;
+    private final java.util.Random imgRandom = new java.util.Random();
 
     private void readBackground() {
         String mode = Prefs.bgMode();
@@ -194,6 +197,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                 bgA = bgB = null;
             }
         }
+        imgFade.retune(Prefs.bgFade() * 0.9f);
         if (mode.equals("image")) loadBackgroundImage();
     }
 
@@ -207,22 +211,8 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             try {
                 java.util.Map<java.io.File, String[]> captions = new java.util.HashMap<>();
                 java.util.List<java.io.File> files = new ArrayList<>();
-                java.io.File dir = c.getExternalFilesDir("wallpapers");
-                java.util.List<java.io.File> mine = new ArrayList<>();
-                for (java.io.File d : new java.io.File[] {dir, new java.io.File(
-                        android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "FreeMyTV")}) {
-                    java.io.File[] in = d == null ? null : d.listFiles();
-                    if (in != null) mine.addAll(java.util.Arrays.asList(in));
-                }
-                {
-                    for (java.io.File f : mine) {
-                        String n = f.getName().toLowerCase(Locale.ROOT);
-                        if (n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp")) files.add(f);
-                    }
-                }
                 final boolean wantMine = !bgSource.equals("art"), wantArt = !bgSource.equals("mine");
-                if (!wantMine) files.clear();
-                else files.addAll(PhoneUpload.pictures(c));   // the ones sent from the phone
+                if (wantMine) files.addAll(PhoneUpload.mine(c));
                 if (wantArt) {
                     Recs recs = Recs.get(c);
                     for (Recs.Pick p : recs.showcase()) {
@@ -234,10 +224,20 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
                     }
                 }
                 java.util.Collections.sort(files);
+                final boolean random = Prefs.bgRandom();
                 for (int tries = 0; tries < files.size() && baked == null; tries++) {
-                    java.io.File f = files.get(Math.floorMod(imgPick++, files.size()));
+                    java.io.File f;
+                    if (random) {
+                        f = files.get(imgRandom.nextInt(files.size()));
+                        if (files.size() > 1 && f.equals(imgLast)) continue;   // never the same one twice in a row
+                    } else {
+                        f = files.get(Math.floorMod(imgPick++, files.size()));
+                    }
                     baked = bake(f);
-                    if (baked != null) caption = captions.get(f);
+                    if (baked != null) {
+                        caption = captions.get(f);
+                        imgLast = f;
+                    }
                 }
             } catch (RuntimeException e) {
                 AppLog.w("background image: " + e.getMessage());
@@ -246,6 +246,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             final String[] resultCaption = caption;
             handler.post(() -> {
                 imgLoading = false;
+                imgAt = SystemClock.uptimeMillis();
                 if (result == null || !bgMode.equals("image")) return;
                 if (bgA == null) {
                     bgA = result;
@@ -760,12 +761,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
         @Override public void run() {
             if (!running) return;
             long minute = System.currentTimeMillis() / 60_000;
-            if (bgMode.equals("image") && ++imgTick % 4 == 0) loadBackgroundImage();
+            if (bgMode.equals("image") && SystemClock.uptimeMillis() - imgAt >= Prefs.bgEvery() * 1000L - 2500) loadBackgroundImage();
             if (minute != lastMinute) {
                 data.refreshIfStale();
                 invalidate();
             }
-            handler.postDelayed(this, 15_000);
+            handler.postDelayed(this, 5_000);
         }
     };
 

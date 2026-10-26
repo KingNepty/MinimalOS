@@ -138,7 +138,7 @@ public class SettingsActivity extends Activity {
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, APPS = 2, PREFS = 3, SHELF = 4, HIDDEN = 5, CITY = 6, SETUP = 7,
-                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10, UPDATES = 11, LIGHTS = 12;
+                PREFS_HOME = 8, PREFS_BG = 9, PREFS_REGION = 10, UPDATES = 11, LIGHTS = 12, LIVE = 13, PREFS_STANDBY = 14;
         private static final int VISIBLE = 10;   // rows of a list on screen at once
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104,
                 MAIN_H = 62, MAIN_GAP = 8;
@@ -284,12 +284,12 @@ public class SettingsActivity extends Activity {
         }
 
         private boolean isList(int s) {
-            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY || s == UPDATES || s == LIGHTS;
+            return s == APPS || isPrefs(s) || s == SHELF || s == HIDDEN || s == CITY || s == UPDATES || s == LIGHTS || s == LIVE;
         }
 
         /** The Preferences menu and the three screens under it. */
         private static boolean isPrefs(int s) {
-            return s == PREFS || s == PREFS_HOME || s == PREFS_BG || s == PREFS_REGION;
+            return s == PREFS || s == PREFS_HOME || s == PREFS_BG || s == PREFS_STANDBY || s == PREFS_REGION;
         }
 
         private int rowCount() {
@@ -315,6 +315,8 @@ public class SettingsActivity extends Activity {
                 buildSetup();
             } else if (s == UPDATES) {
                 if (updateInfo == null) checkUpdates(false);
+            } else if (s == LIVE) {
+                candidates = HomeApps.liveTvCandidates(c);
             } else if (s == LIGHTS) {
                 findStrips();
             } else if (s == PREFS) {
@@ -332,9 +334,11 @@ public class SettingsActivity extends Activity {
                 case PREFS: return Ui.tr("Preferências", "Preferences");
                 case PREFS_HOME: return Ui.tr("Layout do Início", "Home Layout");
                 case PREFS_BG: return Ui.tr("Fundo", "Background");
+                case PREFS_STANDBY: return Ui.tr("Tela de descanso", "Screensaver");
                 case PREFS_REGION: return Ui.tr("Região e idioma", "Region & Language");
                 case UPDATES: return Ui.tr("Atualizações", "Updates");
                 case LIGHTS: return Ui.tr("Luzes", "Lights");
+                case LIVE: return Ui.tr("App da TV ao Vivo", "Live TV App");
                 case SHELF: return Ui.tr("Apps do Início", "Shelf Apps");
                 case HIDDEN: return Ui.tr("Apps ocultos", "Hidden Apps");
                 case CITY: return Ui.tr("Cidade", "City");
@@ -352,6 +356,16 @@ public class SettingsActivity extends Activity {
                 case "fr": return "Français";
                 case "pt": return "Português";
                 default: return Ui.tr("Automático", "Automatic");
+            }
+        }
+
+        private static String liveAppName(Context c) {
+            String pkg = Prefs.liveApp();
+            if (pkg.isEmpty()) return Ui.tr("Automático", "Automatic");
+            try {
+                return String.valueOf(c.getPackageManager().getApplicationLabel(c.getPackageManager().getApplicationInfo(pkg, 0)));
+            } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+                return Ui.tr("Automático", "Automatic");
             }
         }
 
@@ -395,16 +409,24 @@ public class SettingsActivity extends Activity {
                     region.symbol = "tv";
                     region.value = Prefs.city().trim().isEmpty() ? "—" : Prefs.city().trim();
                     region.desc = Ui.tr("Cidade (clima), idioma e temperatura.", "City (weather), language and temperature.");
+                    Row standby = new Row(Ui.tr("Tela de descanso", "Screensaver"), "g_standby");
+                    standby.symbol = "bedtime";
+                    standby.value = standbySourceName(Prefs.standbySource());
+                    standby.desc = Ui.tr("O que aparece quando a TV fica parada.", "What shows when the TV sits idle.");
                     Row lights = new Row(Ui.tr("Luzes", "Lights"), "g_lights");
                     lights.symbol = "sunny";
                     lights.value = Lights.ready() ? Lights.name() : Ui.tr("Não definida", "Not set");
                     lights.desc = Ui.tr("Controle a fita de LED por Bluetooth.", "Control your LED strip over Bluetooth.");
+                    Row live = new Row(Ui.tr("App da TV ao Vivo", "Live TV App"), "g_live");
+                    live.symbol = "live_tv";
+                    live.value = liveAppName(c);
+                    live.desc = Ui.tr("O app que abre no botão TV ao Vivo.", "The app the Live TV button opens.");
                     Row update = new Row(Ui.tr("Atualizações", "Updates"), "g_update");
                     update.symbol = "sync";
                     update.value = updateInfo != null && Updater.newer(updateInfo.version, Updater.installed(getContext()))
                             ? Ui.tr("Nova versão", "Update available") : Updater.installed(getContext());
                     update.desc = Ui.tr("Veja se há uma versão nova e instale.", "Check for a new version and install it.");
-                    for (Row r : new Row[] {home, bg, lights, region, update}) {
+                    for (Row r : new Row[] {home, bg, standby, lights, region, live, update}) {
                         r.chevron = true;
                         rows.add(r);
                     }
@@ -433,6 +455,17 @@ public class SettingsActivity extends Activity {
                         String notes = updateInfo.notes.replace("\r", "").replace("\n", " ").replaceAll("[#*`]", "").trim();
                         install.desc = notes.length() > 220 ? notes.substring(0, 217) + "…" : notes;
                         rows.add(install);
+                    }
+                    break;
+                }
+                case LIVE: {
+                    Row auto = new Row(Ui.tr("Automático (da TV)", "Automatic (the TV's own)"), "auto");
+                    auto.check = Prefs.liveApp().isEmpty();
+                    rows.add(auto);
+                    for (HomeApps.Item it : candidates) {
+                        Row r = new Row(it.label, it.pkg);
+                        r.check = it.pkg.equals(Prefs.liveApp());
+                        rows.add(r);
                     }
                     break;
                 }
@@ -496,12 +529,41 @@ public class SettingsActivity extends Activity {
                         source.value = bgSourceName(Prefs.bgSource());
                         source.desc = Ui.tr("Suas fotos, as capas de filmes e séries, ou as duas.", "Your photos, movie and show art, or both.");
                         rows.add(source);
+                        Row order = new Row(Ui.tr("Ordem", "Order"), "bgorder");
+                        order.value = orderName(Prefs.bgRandom());
+                        order.desc = Ui.tr("Uma depois da outra, ou aleatória.", "One after the other, or random.");
+                        rows.add(order);
+                        Row every = new Row(Ui.tr("Trocar a cada", "Change Every"), "bgevery");
+                        every.value = secondsName(Prefs.bgEvery());
+                        every.desc = Ui.tr("Quanto tempo cada imagem fica na tela.", "How long each picture stays on screen.");
+                        rows.add(every);
+                        Row fade = new Row(Ui.tr("Transição", "Fade Time"), "bgfade");
+                        fade.value = secondsName(Prefs.bgFade());
+                        fade.desc = Ui.tr("Quanto dura a mudança de uma imagem para a outra.", "How long the change from one picture to the next takes.");
+                        rows.add(fade);
                         Row phone = new Row(Ui.tr("Fotos do celular", "Pictures from phone"), "phone");
                         phone.value = String.valueOf(PhoneUpload.pictures(getContext()).size());
                         phone.chevron = true;
                         phone.desc = Ui.tr("Envie fotos do celular pelo Wi-Fi, com um código.", "Send photos from your phone over Wi-Fi, with a code.");
                         rows.add(phone);
                     }
+                    break;
+                }
+                case PREFS_STANDBY: {
+                    Row source = new Row(Ui.tr("O que mostrar", "What to Show"), "ssource");
+                    source.value = standbySourceName(Prefs.standbySource());
+                    source.desc = Ui.tr("Capas de filmes e séries (TMDB), suas fotos, ou as duas misturadas.",
+                            "Movie and show art (TMDB), your photos, or both mixed.");
+                    rows.add(source);
+                    Row order = new Row(Ui.tr("Ordem", "Order"), "sorder");
+                    order.value = orderName(Prefs.standbyRandom());
+                    order.desc = Ui.tr("Uma depois da outra, ou aleatória.", "One after the other, or random.");
+                    rows.add(order);
+                    Row phone = new Row(Ui.tr("Fotos do celular", "Pictures from phone"), "phone");
+                    phone.value = String.valueOf(PhoneUpload.pictures(getContext()).size());
+                    phone.chevron = true;
+                    phone.desc = Ui.tr("Envie fotos do celular pelo Wi-Fi, com um código.", "Send photos from your phone over Wi-Fi, with a code.");
+                    rows.add(phone);
                     break;
                 }
                 case PREFS_REGION: {
@@ -896,10 +958,13 @@ public class SettingsActivity extends Activity {
                     return new String[] {Ui.tr("OK: abrir", "OK: open")};
                 case PREFS_HOME:
                 case PREFS_BG:
+                case PREFS_STANDBY:
                 case PREFS_REGION:
                     return new String[] {Ui.tr("OK ou ← →: mudar", "OK or ← →: change")};
                 case CITY:
                     return new String[] {Ui.tr("OK: buscar ou escolher", "OK: search or choose")};
+                case LIVE:
+                    return new String[] {Ui.tr("OK: escolher o app da TV ao Vivo", "OK: choose the Live TV app")};
                 case LIGHTS:
                     return new String[] {Ui.tr("OK: escolher a fita; ela acende para você ver qual é", "OK: choose a strip; it lights up so you can see which one")};
                 default:
@@ -1083,9 +1148,11 @@ public class SettingsActivity extends Activity {
                 case CITY: enter(PREFS_REGION, 0); break;
                 case PREFS_HOME: enter(PREFS, 0); break;
                 case PREFS_BG: enter(PREFS, 1); break;
-                case PREFS_REGION: enter(PREFS, 3); break;
-                case UPDATES: enter(PREFS, 4); break;
-                case LIGHTS: enter(PREFS, 2); break;
+                case PREFS_STANDBY: enter(PREFS, 2); break;
+                case LIGHTS: enter(PREFS, 3); break;
+                case PREFS_REGION: enter(PREFS, 4); break;
+                case LIVE: enter(PREFS, 5); break;
+                case UPDATES: enter(PREFS, 6); break;
                 case PREFS: enter(MAIN, 2); break;
                 default: enter(MAIN, 0); break;
             }
@@ -1119,6 +1186,16 @@ public class SettingsActivity extends Activity {
                 }
             } else if (tag.equals("bgsource")) {
                 Prefs.put("bgSource", next(BG_SOURCES, oneOf(Prefs.bgSource(), BG_SOURCES), by));
+            } else if (tag.equals("bgorder")) {
+                Prefs.put("bgOrder", Prefs.bgRandom() ? "order" : "random");
+            } else if (tag.equals("bgevery")) {
+                Prefs.put("bgEvery", next(Prefs.BG_EVERY, oneOf(String.valueOf(Prefs.bgEvery()), Prefs.BG_EVERY), by));
+            } else if (tag.equals("bgfade")) {
+                Prefs.put("bgFade", next(Prefs.BG_FADE, oneOf(String.valueOf(Prefs.bgFade()), Prefs.BG_FADE), by));
+            } else if (tag.equals("ssource")) {
+                Prefs.put("standbySource", next(STANDBY_SOURCES, oneOf(Prefs.standbySource(), STANDBY_SOURCES), by));
+            } else if (tag.equals("sorder")) {
+                Prefs.put("standbyOrder", Prefs.standbyRandom() ? "order" : "random");
             } else if (tag.equals("bgcolor")) {
                 String[] hex = new String[BG_COLORS.length];
                 for (int i = 0; i < hex.length; i++) hex[i] = BG_COLORS[i][0];
@@ -1156,6 +1233,22 @@ public class SettingsActivity extends Activity {
             if (source.equals("mine")) return Ui.tr("Minhas fotos", "My photos");
             if (source.equals("art")) return Ui.tr("Capas de filmes", "Show art");
             return Ui.tr("As duas", "Both");
+        }
+
+        private static final String[] STANDBY_SOURCES = {"mixed", "art", "mine"};
+
+        private static String standbySourceName(String source) {
+            if (source.equals("mine")) return Ui.tr("Minhas fotos", "My photos");
+            if (source.equals("art")) return Ui.tr("Só TMDB", "TMDB only");
+            return Ui.tr("Misturado", "Mixed");
+        }
+
+        private static String orderName(boolean random) {
+            return random ? Ui.tr("Aleatória", "Random") : Ui.tr("Em ordem", "In order");
+        }
+
+        private static String secondsName(int s) {
+            return s >= 120 && s % 60 == 0 ? (s / 60) + " min" : s + " s";
         }
 
         private static String bgModeName(String mode) {
@@ -1309,13 +1402,17 @@ public class SettingsActivity extends Activity {
                 toggleShelfApp();
             } else if (screen == HIDDEN) {
                 toggleHidden();
+            } else if (screen == LIVE) {
+                String tag = rows.get(focus).tag;
+                Prefs.put("liveApp", tag.equals("auto") ? "" : tag);
+                buildRows();
             } else if (screen == APPS) {
                 enter(rows.get(focus).tag.equals("shelf") ? SHELF : HIDDEN, 0);
                 return;
             } else if (screen == PREFS) {
                 String group = rows.get(focus).tag;
-                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG : group.equals("g_lights") ? LIGHTS
-                        : group.equals("g_update") ? UPDATES : PREFS_REGION, 0);
+                enter(group.equals("g_home") ? PREFS_HOME : group.equals("g_bg") ? PREFS_BG : group.equals("g_standby") ? PREFS_STANDBY : group.equals("g_lights") ? LIGHTS
+                        : group.equals("g_live") ? LIVE : group.equals("g_update") ? UPDATES : PREFS_REGION, 0);
                 return;
             } else if (screen == LIGHTS) {
                 String tag = rows.get(focus).tag;

@@ -60,12 +60,41 @@ final class Prefs {
         return s.equals("mine") || s.equals("art") ? s : "both";
     }
 
+    /** How the Images background goes through its pictures: "order" (one after the other) or "random". */
+    static boolean bgRandom() { return get("bgOrder", "order").equals("random"); }
+
+    static final String[] BG_EVERY = {"15", "30", "60", "120", "300"}, BG_FADE = {"1", "2", "4", "8"};
+
+    /** Seconds each Images background picture stays (Settings → Preferences → Background). */
+    static int bgEvery() { return seconds("bgEvery", "60", BG_EVERY); }
+
+    /** Seconds the crossfade to the next picture takes. */
+    static int bgFade() { return seconds("bgFade", "2", BG_FADE); }
+
+    /** What the screensaver shows: "mixed", "art" (movie and show art from TMDB) or "mine" (your photos). */
+    static String standbySource() {
+        String s = get("standbySource", "mixed");
+        return s.equals("art") || s.equals("mine") ? s : "mixed";
+    }
+
+    /** The screensaver's order: "order" or "random". */
+    static boolean standbyRandom() { return get("standbyOrder", "order").equals("random"); }
+
+    private static int seconds(String key, String fallback, String[] allowed) {
+        String v = get(key, fallback);
+        for (String a : allowed) if (a.equals(v)) return Integer.parseInt(v);
+        return Integer.parseInt(fallback);
+    }
+
     /** The static background's color, as RRGGBB. */
     static String bgColor() { return get("bgColor", "3A5BD9"); }
 
     /** The app that was selected last on the home screen (its package), so the home comes back to it. */
     /** The LED strip: its saved name and address, and where the color and brightness buttons are. */
     static String lights(String key) { return get("light_" + key, ""); }
+
+    /** The app the Live TV button opens (package); empty = the TV's own. */
+    static String liveApp() { return get("liveApp", ""); }
 
     static String lastApp() { return get("lastApp", ""); }
 

@@ -277,6 +277,29 @@ final class HomeApps {
         return items;
     }
 
+    /** Every app the Live TV button could open (TV apps and phone-style ones you installed), A to Z. */
+    static List<Item> liveTvCandidates(Context c) {
+        PackageManager pm = c.getPackageManager();
+        List<Item> items = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        seen.add(c.getPackageName());
+        for (String category : new String[] {Intent.CATEGORY_LEANBACK_LAUNCHER, Intent.CATEGORY_LAUNCHER}) {
+            for (ResolveInfo ri : pm.queryIntentActivities(new Intent(Intent.ACTION_MAIN).addCategory(category), 0)) {
+                String pkg = ri.activityInfo.packageName;
+                boolean system = (ri.activityInfo.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0;
+                if (!seen.add(pkg) || (system && category.equals(Intent.CATEGORY_LAUNCHER))) continue;
+                Item it = new Item();
+                it.kind = APP;
+                it.pkg = pkg;
+                it.key = pkg;
+                it.label = String.valueOf(ri.loadLabel(pm));
+                items.add(it);
+            }
+        }
+        Collections.sort(items, (x, y) -> x.label.toLowerCase(Locale.ROOT).compareTo(y.label.toLowerCase(Locale.ROOT)));
+        return items;
+    }
+
     /** Live TV, the HDMI inputs with a device sending a signal, and All Apps. */
     static List<Item> shortcuts(Context c) {
         List<Item> items = new ArrayList<>();
@@ -414,6 +437,20 @@ final class HomeApps {
             it.tile = appTile(c, null, pkg, 0);
             items.add(it);
         }
+        // Phone-style apps (no TV launcher entry) you installed yourself; the maker's own system apps stay out.
+        Intent phone = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        for (ResolveInfo ri : pm.queryIntentActivities(phone, 0)) {
+            String pkg = ri.activityInfo.packageName;
+            if (skip.contains(pkg) || (ri.activityInfo.applicationInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                    || !seen.add(pkg)) continue;
+            Item it = new Item();
+            it.kind = APP;
+            it.pkg = pkg;
+            it.key = pkg;
+            it.label = String.valueOf(ri.loadLabel(pm));
+            it.tile = appTile(c, null, pkg, 0);
+            items.add(it);
+        }
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
         // The ones you opened last come first.
         List<Item> recent = new ArrayList<>();
@@ -467,6 +504,17 @@ final class HomeApps {
             it.intent = found;
             it.tile = linkTile(c, (String) row[0], (String) row[3], label);
             out.add(it);
+        }
+        // The app store: Amazon Appstore on Fire OS, Google Play on Google TV / Android TV.
+        for (String store : new String[] {"com.amazon.venezia", "com.android.vending"}) {
+            Intent open = launchIntent(pm, store);
+            if (open == null) continue;
+            String label = Ui.tr("Loja de Apps", "App Store");
+            Item it = shortcut(LINK, "sc-store", label, "store");
+            it.intent = open;
+            it.tile = linkTile(c, "sc-store", "store", label);
+            out.add(it);
+            break;
         }
         return out;
     }
@@ -590,6 +638,11 @@ final class HomeApps {
      */
     static Intent liveTv(Context c) {
         PackageManager pm = c.getPackageManager();
+        String chosen = Prefs.liveApp();
+        if (!chosen.isEmpty()) {
+            Intent app = launchIntent(pm, chosen);
+            if (app != null) return app;   // uninstalled since: back to the TV's own
+        }
         String tuner = tunerInput(c);
         if (tuner != null) {
             Intent channels = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelsUriForInput(tuner));
