@@ -122,6 +122,31 @@ final class HomeMode {
         return "Amazon".equalsIgnoreCase(Build.MANUFACTURER);
     }
 
+    /**
+     * The screensaver, from inside the app (the TV's ADB isn't there): Fire OS honors the setting once the app holds
+     * WRITE_SECURE_SETTINGS (the same grant as FIRE_ON). Amazon's is remembered so "Original" puts it back.
+     */
+    private static void fireDream(Context c, boolean ours) {
+        try {
+            if (c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+            android.content.ContentResolver r = c.getContentResolver();
+            String now = android.provider.Settings.Secure.getString(r, "screensaver_components");
+            JSONObject s = state(c);
+            if (ours) {
+                if (now != null && now.contains(DREAM)) return;
+                if (now != null && !now.isEmpty()) save(c, s.put("originalDream", now));
+                android.provider.Settings.Secure.putString(r, "screensaver_components", DREAM);
+                android.provider.Settings.Secure.putInt(r, "screensaver_enabled", 1);
+            } else {
+                String original = s.optString("originalDream", "");
+                if (now == null || !now.contains(DREAM)) return;   // not ours: leave it
+                android.provider.Settings.Secure.putString(r, "screensaver_components", original.isEmpty() ? "com.amazon.ftv.screensaver/.app.services.ScreensaverService" : original);
+            }
+        } catch (JSONException | RuntimeException e) {
+            AppLog.w("screensaver: " + e.getMessage());
+        }
+    }
+
     private static void applyFireFree(Context c) {
         if (!HomeKeyService.running()) {
             done(c, Ui.tr("Falta ligar uma vez, pelo computador: ", "One-time step, from a computer: ") + FIRE_ON);
@@ -133,6 +158,7 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray());
             save(c, s);
+            fireDream(c, true);
             notice(c, Ui.tr("MinimalOS ligado: o botão Início abre o MinimalOS.",
                     "MinimalOS is on: the Home button opens MinimalOS."));
             done(c, null);
@@ -146,6 +172,7 @@ final class HomeMode {
     private static void applyFireOriginal(Context c) {
         try {
             HomeKeyService.turnOff();
+            fireDream(c, false);
             JSONObject s = state(c);
             s.put("mode", ORIGINAL).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray());
@@ -168,6 +195,7 @@ final class HomeMode {
             }
         }
         fireService(app, HomeKeyService.running());
+        if (FREE.equals(state(app).optString("mode"))) fireDream(app, true);
         if (!HomeKeyService.running()) {
             notice(app, Ui.tr("O Início do MinimalOS está desligado na TV. Pelo computador: ",
                     "MinimalOS's home screen is off on the TV. From a computer: ") + FIRE_ON);
