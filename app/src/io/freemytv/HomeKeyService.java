@@ -10,7 +10,7 @@ import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 /**
- * Fire OS has no home screen chooser: Amazon's launcher always wins. So, in Free My TV mode, this service watches for
+ * Fire OS has no home screen chooser: Amazon's launcher always wins. So, in MinimalOS mode, this service watches for
  * Amazon's home screen coming to the front (Home button, or Back out of an app) and opens ours instead. It only
  * sees which window is on top (no screen content, no text), and the Home key, which it takes itself so Amazon's slow
  * launcher (about 3 s) never shows: a short press opens ours at once; holding it opens Amazon's home. Other keys pass

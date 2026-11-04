@@ -40,9 +40,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Free My TV's settings (the app's icon, "All Apps", or the gear on the home screen), in the style of Apple TV's
+ * MinimalOS's settings (the app's icon, "All Apps", or the gear on the home screen), in the style of Apple TV's
  * settings: the big symbol and title on the left, the list on the right with the focused row in white. "Home screen"
- * opens the Free My TV / Original choice (with a check on the current one); the switch runs in the main process
+ * opens the MinimalOS / Original choice (with a check on the current one); the switch runs in the main process
  * (HomeMode) and this screen only asks for it and follows the state file.
  */
 public class SettingsActivity extends Activity {
@@ -191,7 +191,7 @@ public class SettingsActivity extends Activity {
                 hasKey = Recs.hasKey(getContext());
                 recs = Recs.status(getContext());
                 if (!state.optString("busy").isEmpty()) pendingAt = 0;
-                // First-time setup on Fire TV: the service came on, so switch Free My TV on and go back.
+                // First-time setup on Fire TV: the service came on, so switch MinimalOS on and go back.
                 if (screen == SETUP && state.optBoolean("fireService")) {
                     HomeMode.request(getContext(), HomeMode.FREE);
                     pendingAt = SystemClock.uptimeMillis();
@@ -1029,7 +1029,7 @@ public class SettingsActivity extends Activity {
             c.drawText(Ui.tr("Esperando o serviço…", "Waiting for the service…"), LIST_X * k + 72 * k, y + Ui.halfCap(rowLabel) * 0.8f, notice);
         }
 
-        /** Home screen choice: Free My TV or the original, with a check on the one in use. */
+        /** Home screen choice: MinimalOS or the original, with a check on the one in use. */
         private void drawChoice(Canvas c) {
             Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Início", "Home Screen"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);

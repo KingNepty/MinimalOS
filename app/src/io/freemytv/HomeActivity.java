@@ -10,7 +10,7 @@ import android.view.KeyEvent;
 import android.widget.TextView;
 
 /**
- * The Free My TV home screen (Android's "Home" role in Free My TV mode). It runs in the :home process: if it crashes,
+ * The MinimalOS home screen (Android's "Home" role in MinimalOS mode). It runs in the :home process: if it crashes,
  * the safety net in the main process keeps working. On the 3rd crash within 5 min, the Watchdog gives the home screen
  * back to the TV's original one.
  */
