@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="io.freemytv"
-    android:versionCode="12"
-    android:versionName="1.8">
+    android:versionCode="13"
+    android:versionName="1.9">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- After the TV boots (and after a TV update), checks that Free My TV mode is still as you left it. -->
+    <!-- After the TV boots (and after a TV update), checks that MinimalOS mode is still as you left it. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Updates from GitHub releases: the system installer asks once before replacing the app -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -71,13 +71,14 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
+        android:name=".App"
         android:label="MinimalOS"
         android:icon="@drawable/icon"
         android:banner="@drawable/banner"
         android:allowBackup="false"
         android:usesCleartextTraffic="false">
 
-        <!-- The app's icon opens the settings (switch between Free My TV and the original home screen). -->
+        <!-- The app's icon opens the settings (switch between MinimalOS and the original home screen). -->
         <activity
             android:name=".SettingsActivity"
             android:process=":home"
@@ -97,7 +98,7 @@
         </activity>
 
         <!-- The home screen. Its own process (:home): if it ever crashes, the safety net in the main process still
-             works. It only becomes the TV's home screen in Free My TV mode (cmd package set-home-activity). -->
+             works. It only becomes the TV's home screen in MinimalOS mode (cmd package set-home-activity). -->
         <activity
             android:name=".HomeActivity"
             android:process=":home"
@@ -149,6 +150,20 @@
         <service
             android:name=".Screensaver"
             android:process=":home"
+            android:enabled="@bool/dream_in_home"
+            android:exported="true"
+            android:label="MinimalOS"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- The same screensaver on Android 11, in the main process (see ScreensaverAlone). -->
+        <service
+            android:name=".ScreensaverAlone"
+            android:enabled="@bool/dream_alone"
             android:exported="true"
             android:label="MinimalOS"
             android:permission="android.permission.BIND_DREAM_SERVICE">
@@ -177,6 +192,22 @@
             android:name=".ModeJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- The remote's app buttons from inside any app (Settings > Remote Buttons). Its own process: the system waits for it on
+             every key, so the home screen must never be able to slow it down. -->
+        <service
+            android:name=".RemoteKeyService"
+            android:process=":keys"
+            android:exported="true"
+            android:label="MinimalOS"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/remote_key_service" />
+        </service>
 
         <receiver
             android:name=".HomeReceiver"

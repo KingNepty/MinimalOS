@@ -18,6 +18,7 @@ public class HomeActivity extends Activity {
     private HomeView home;          // "For You" style
     private AppsHome appsHome;      // "Apps" style
     private String style = "";
+    private int prefsVersion = Prefs.version;   // settings changed while we were away: start over
 
     /** Builds the home screen of the style chosen in Settings → Preferences. */
     private void buildScreen() {
@@ -59,7 +60,13 @@ public class HomeActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (home == null && appsHome == null) return;
-        if (!style.equals(Prefs.homeStyle())) buildScreen();   // changed in Settings
+        if (prefsVersion != Prefs.version) {
+            prefsVersion = Prefs.version;
+            HomeData.get(this).settingsChanged();
+            if (!style.equals(Prefs.homeStyle())) buildScreen();   // changed in Settings
+            else recreate();   // a new language or city: draw everything again
+            return;
+        }
         if (home != null) home.resume();
         if (appsHome != null) appsHome.resume();
     }
@@ -83,7 +90,13 @@ public class HomeActivity extends Activity {
         super.onDestroy();
     }
 
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (level >= TRIM_MEMORY_COMPLETE) Recs.get(this).trim();
+    }
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if (RemoteKeys.onKey(this, event)) return true;
         if (home != null && home.onKey(event)) return true;
         if (appsHome != null && appsHome.onKey(event)) return true;
         return super.dispatchKeyEvent(event);

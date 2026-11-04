@@ -1415,7 +1415,7 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
     private void focusChanged(boolean snapGlow) {
         if (zone == GRID && index < apps.size()) {
             HomeApps.Item it = apps.get(index);
-            Prefs.put("lastApp", it.pkg != null ? it.pkg : it.key == null ? "" : it.key);
+            Prefs.set("lastApp", it.pkg != null ? it.pkg : it.key == null ? "" : it.key);
             if (it.kind == HomeApps.LIGHT) Lights.warm(getContext());
         }
         int target = bgMode.equals("static") ? staticColor : index < brand.length ? brand[index] : DARK;
@@ -1656,12 +1656,12 @@ final class AppsHome extends View implements Choreographer.FrameCallback, HomeDa
             if (headerSub == 0) {
                 open = !open;
                 metrics();
-                Prefs.put("allApps", open ? "1" : "0");
+                Prefs.set("allApps", open ? "1" : "0");
                 if (!open) headerSub = 0;
                 invalidate();
             } else if ((headerSub == 2) != az) {
                 az = headerSub == 2;
-                Prefs.put("allAppsSort", az ? "az" : "recent");
+                Prefs.set("allAppsSort", az ? "az" : "recent");
                 reload();
             }
             return;

@@ -143,7 +143,7 @@ public class SettingsActivity extends Activity {
         private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104,
                 MAIN_H = 62, MAIN_GAP = 8;
         private static final int AMBER = 0xFFFFC266, INK = 0xFF1C1C1E;
-        private static final String[] LANGUAGES = {"auto", "en", "fr", "pt"}, UNITS = {"auto", "C", "F"};
+        private static final String[] LANGUAGES = {"auto", "en", "fr", "pt", "es", "de", "ru"}, UNITS = {"auto", "C", "F"};
 
         /** One line of a list screen. */
         private static final class Row {
@@ -355,6 +355,9 @@ public class SettingsActivity extends Activity {
                 case "en": return "English";
                 case "fr": return "Français";
                 case "pt": return "Português";
+                case "es": return "Español";
+                case "de": return "Deutsch";
+                case "ru": return "Русский";
                 default: return Ui.tr("Automático", "Automatic");
             }
         }
@@ -1173,10 +1176,10 @@ public class SettingsActivity extends Activity {
             if (focus >= rows.size()) return;
             String tag = rows.get(focus).tag;
             if (tag.equals("style")) {
-                Prefs.put("homeStyle", Prefs.homeStyle().equals("foryou") ? "apps" : "foryou");
+                Prefs.set("homeStyle", Prefs.homeStyle().equals("foryou") ? "apps" : "foryou");
             } else if (tag.equals("bg")) {
                 String mode = next(BG_MODES, oneOf(Prefs.bgMode(), BG_MODES), by);
-                Prefs.put("bgMode", mode);
+                Prefs.set("bgMode", mode);
                 // The Images background reads your photos from Pictures/FreeMyTV: ask for the permission once.
                 if (mode.equals("image") && getContext() instanceof android.app.Activity
                         && getContext().checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -1185,33 +1188,33 @@ public class SettingsActivity extends Activity {
                             new String[] {android.Manifest.permission.READ_EXTERNAL_STORAGE}, 7);
                 }
             } else if (tag.equals("bgsource")) {
-                Prefs.put("bgSource", next(BG_SOURCES, oneOf(Prefs.bgSource(), BG_SOURCES), by));
+                Prefs.set("bgSource", next(BG_SOURCES, oneOf(Prefs.bgSource(), BG_SOURCES), by));
             } else if (tag.equals("bgorder")) {
-                Prefs.put("bgOrder", Prefs.bgRandom() ? "order" : "random");
+                Prefs.set("bgOrder", Prefs.bgRandom() ? "order" : "random");
             } else if (tag.equals("bgevery")) {
-                Prefs.put("bgEvery", next(Prefs.BG_EVERY, oneOf(String.valueOf(Prefs.bgEvery()), Prefs.BG_EVERY), by));
+                Prefs.set("bgEvery", next(Prefs.BG_EVERY, oneOf(String.valueOf(Prefs.bgEvery()), Prefs.BG_EVERY), by));
             } else if (tag.equals("bgfade")) {
-                Prefs.put("bgFade", next(Prefs.BG_FADE, oneOf(String.valueOf(Prefs.bgFade()), Prefs.BG_FADE), by));
+                Prefs.set("bgFade", next(Prefs.BG_FADE, oneOf(String.valueOf(Prefs.bgFade()), Prefs.BG_FADE), by));
             } else if (tag.equals("ssource")) {
-                Prefs.put("standbySource", next(STANDBY_SOURCES, oneOf(Prefs.standbySource(), STANDBY_SOURCES), by));
+                Prefs.set("standbySource", next(STANDBY_SOURCES, oneOf(Prefs.standbySource(), STANDBY_SOURCES), by));
             } else if (tag.equals("sorder")) {
-                Prefs.put("standbyOrder", Prefs.standbyRandom() ? "order" : "random");
+                Prefs.set("standbyOrder", Prefs.standbyRandom() ? "order" : "random");
             } else if (tag.equals("bgcolor")) {
                 String[] hex = new String[BG_COLORS.length];
                 for (int i = 0; i < hex.length; i++) hex[i] = BG_COLORS[i][0];
-                Prefs.put("bgColor", next(hex, oneOf(Prefs.bgColor(), hex), by));
+                Prefs.set("bgColor", next(hex, oneOf(Prefs.bgColor(), hex), by));
             } else if (tag.equals("shelf")) {
                 int n = Prefs.shelfSize() + by;
                 if (n > Prefs.SHELF_MAX) n = Prefs.SHELF_MIN;
                 if (n < Prefs.SHELF_MIN) n = Prefs.SHELF_MAX;
-                Prefs.put("shelfSize", String.valueOf(n));
+                Prefs.set("shelfSize", String.valueOf(n));
             } else if (tag.equals("lang")) {
                 String next = next(LANGUAGES, oneOf(Prefs.language(), LANGUAGES), by);
-                Prefs.put("language", next);
+                Prefs.set("language", next);
                 Ui.applyLanguage();
                 HomeData.get(getContext()).settingsChanged();
             } else if (tag.equals("temp")) {
-                Prefs.put("temperature", next(UNITS, oneOf(Prefs.temperature(), UNITS), by));
+                Prefs.set("temperature", next(UNITS, oneOf(Prefs.temperature(), UNITS), by));
             } else {
                 return;
             }
@@ -1327,7 +1330,7 @@ public class SettingsActivity extends Activity {
             if (query.isEmpty()) return;
             lastSearch = query;
             say(Ui.tr("Buscando…", "Searching…"));
-            final String language = Ui.fr ? "fr" : Ui.en ? "en" : "pt";
+            final String language = Ui.language;
             new Thread(() -> {
                 final List<String[]> found = new ArrayList<>();
                 String error = null;
@@ -1377,7 +1380,7 @@ public class SettingsActivity extends Activity {
 
         private void pickCity(int index) {
             String[] r = cityResults.get(index);
-            Prefs.put(new String[][] {{"city", r[0]}, {"latitude", r[2]}, {"longitude", r[3]}, {"region", r[4].toUpperCase(Locale.ROOT)},
+            Prefs.set(new String[][] {{"city", r[0]}, {"latitude", r[2]}, {"longitude", r[3]}, {"region", r[4].toUpperCase(Locale.ROOT)},
                     {"currency", currencyFor(r[4].toUpperCase(Locale.ROOT))}});
             HomeData.get(getContext()).settingsChanged();
             enter(PREFS_REGION, 0);
@@ -1404,7 +1407,7 @@ public class SettingsActivity extends Activity {
                 toggleHidden();
             } else if (screen == LIVE) {
                 String tag = rows.get(focus).tag;
-                Prefs.put("liveApp", tag.equals("auto") ? "" : tag);
+                Prefs.set("liveApp", tag.equals("auto") ? "" : tag);
                 buildRows();
             } else if (screen == APPS) {
                 enter(rows.get(focus).tag.equals("shelf") ? SHELF : HIDDEN, 0);

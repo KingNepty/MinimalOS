@@ -101,6 +101,7 @@ final class HomeApps {
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
     static int maxShelf() { return 8; }
+    static final int MAX_SHELF = 8;
     /** Live TV apps of some brands (the antenna's channels open through the standard Android request first). */
     static final String[] LIVE_TV_APPS = {"com.tcl.tv", "com.google.android.tv", "com.mediatek.wwtv.tvcenter", "com.sony.dtv.tvx"};
     /** Kept out of "All Apps" (only hidden, still installed). Add the ones your TV shows that you never use. */
@@ -111,6 +112,13 @@ final class HomeApps {
             "com.tcl.dashboard",                    // TCL Home
             "com.tcl.ocean.instructions",           // TCL: User Guide
             "com.tcl.guard",                        // TCL: Safety Guard
+            "com.homwee.factory",                   // Philco: factory menu
+            "com.mstar.android.tv.disclaimercustomization",   // Philco: disclaimer
+            "com.homwee.chtvmanager",               // Philco: TV Manager (cleaner)
+            "com.homwee.multiscreenshare",          // Philco: Midiacast (Chromecast still works)
+            "com.xiaomi.mitv.manualhelp",           // Xiaomi: user manual
+            "com.google.android.videos",            // Google Play Movies (discontinued)
+            "com.disney.starplus",                  // Star+ (merged into Disney+)
             "com.tcl.exhibit"));                    // TCL: T-Exhibition
 
     private static final Map<String, Bitmap> TILES = new HashMap<>();   // key → ready card
@@ -363,16 +371,25 @@ final class HomeApps {
 
     /**
      * HDMI inputs: only the ones with a device sending a signal (or all of them, with `all`). A name you gave the input
-     * in the TV's settings is used as the label.
+     * in the TV's settings is used as the label; without one, the name the device reports over HDMI-CEC ("PlayStation 5").
+     * The icon follows what that name says the device is (see deviceSymbol).
      */
     private static List<Item> inputs(Context c, boolean all) {
         List<Item> out = new ArrayList<>();
         TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
         if (tim == null) return out;
         List<TvInputInfo> list = new ArrayList<>();
+        // A device that talks HDMI-CEC gets its own input, a child of the port's, named after the device: port input id
+        // -> that name.
+        Map<String, String> devices = new HashMap<>();
         try {
             for (TvInputInfo info : tim.getTvInputList()) {
-                if (info.getType() == TvInputInfo.TYPE_HDMI && info.getParentId() == null) list.add(info);
+                if (info.getType() != TvInputInfo.TYPE_HDMI) continue;
+                if (info.getParentId() == null) {
+                    list.add(info);
+                } else {
+                    devices.put(info.getParentId(), String.valueOf(info.loadLabel(c)).trim());
+                }
             }
         } catch (RuntimeException e) {
             return out;
@@ -397,8 +414,12 @@ final class HomeApps {
                 custom = info.loadCustomLabel(c);
             } catch (RuntimeException ignored) {
             }
-            String label = custom != null && custom.length() > 0 ? custom.toString() : "HDMI " + number;
-            Item it = shortcut(INPUT, "hdmi" + number, label, "hdmi");
+            String reported = devices.containsKey(info.getId()) ? devices.get(info.getId()) : "";
+            String label = custom != null && custom.length() > 0 ? custom.toString()
+                    : !reported.isEmpty() && state == TvInputManager.INPUT_STATE_CONNECTED ? reported : "HDMI " + number;
+            String symbol = state == TvInputManager.INPUT_STATE_CONNECTED || custom != null
+                    ? deviceSymbol(label) : "hdmi";
+            Item it = shortcut(INPUT, "hdmi" + number, label, symbol);
             it.inputId = info.getId();
             it.number = String.valueOf(number);
             it.connected = state == TvInputManager.INPUT_STATE_CONNECTED;
@@ -406,6 +427,23 @@ final class HomeApps {
         }
         Collections.sort(out, (a, b) -> a.number.compareTo(b.number));
         return out;
+    }
+
+    /** Words in a device's name, by the icon they pick: a game console, a streaming box, a sound system, a TV box. */
+    private static final String[][] DEVICE_WORDS = {
+        {"gamepad", "playstation", "ps5", "ps4", "ps3", "xbox", "nintendo", "switch", "steam deck", "console", "game"},
+        {"play", "apple tv", "chromecast", "fire tv", "firetv", "roku", "shield", "mi box", "tv box", "tvbox", "stick", "streaming", "google tv", "android tv"},
+        {"speaker", "soundbar", "sound bar", "receiver", "denon", "yamaha", "marantz", "onkyo", "bose", "sonos", "jbl", "audio", "home theater"},
+        {"tv", "cable", "set-top", "decoder", "decodificador", "tuner", "sky", "claro", "vivo"},
+    };
+
+    /** The icon for an HDMI device, from the words in its name; a name that says nothing (or a plain port) is the HDMI plug. */
+    static String deviceSymbol(String name) {
+        String n = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        for (String[] group : DEVICE_WORDS) {
+            for (int i = 1; i < group.length; i++) if (n.contains(group[i])) return group[0];
+        }
+        return "hdmi";
     }
 
     /** Installed, enabled TV apps that are not on the home screen (the TV's Settings is among them), plus our own. */
@@ -465,6 +503,9 @@ final class HomeApps {
         }
         items.removeAll(recent);
         items.addAll(0, recent);
+        synchronized (HomeApps.class) {
+            TILES.keySet().removeIf(k -> k.contains(".") && !seen.contains(k));
+        }
         items.add(special(c, SETTINGS, "freemytv-settings", "MinimalOS", "sparkles"));
         return items;
     }
@@ -633,8 +674,8 @@ final class HomeApps {
     }
 
     /**
-     * Live TV: the antenna input's channels through the standard Android request (opening the TV app by itself may go
-     * back to the last input used, like an HDMI); otherwise a known live TV app. Null = this TV has none.
+     * Live TV: tune the antenna input directly. MediaTek TV Center otherwise restores the last source used, which can
+     * be HDMI, so its explicit activity receives the tuner URI. Other TV apps keep the standard channel-list request.
      */
     static Intent liveTv(Context c) {
         PackageManager pm = c.getPackageManager();
@@ -644,10 +685,16 @@ final class HomeApps {
             if (app != null) return app;   // uninstalled since: back to the TV's own
         }
         String tuner = tunerInput(c);
+        Intent mediaTek = launchIntent(pm, "com.mediatek.wwtv.tvcenter");
+        if (mediaTek != null && tuner != null) {
+            return new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(tuner))
+                    .setComponent(mediaTek.getComponent());
+        }
         if (tuner != null) {
             Intent channels = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelsUriForInput(tuner));
             if (channels.resolveActivity(pm) != null) return channels;
         }
+        if (mediaTek != null) return mediaTek;
         for (String pkg : LIVE_TV_APPS) {
             Intent app = launchIntent(pm, pkg);
             if (app != null) return app;
@@ -726,6 +773,14 @@ final class HomeApps {
         File dir = file.getParentFile();
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
+        String key = file.getName().substring(0, file.getName().lastIndexOf('-', file.getName().lastIndexOf("-v") - 1));
+        File[] old = dir.listFiles((d, name) -> name.matches(java.util.regex.Pattern.quote(key) + "-\\d+-v\\d+\\.png(\\.none)?"));
+        if (old != null) {
+            for (File f : old) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        }
         try (FileOutputStream out = new FileOutputStream(logo != null ? file : none)) {
             if (logo != null) logo.compress(Bitmap.CompressFormat.PNG, 100, out);
         } catch (IOException e) {

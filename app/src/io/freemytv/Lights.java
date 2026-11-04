@@ -76,11 +76,11 @@ final class Lights {
     static String name() { return Prefs.lights("name"); }
 
     static void choose(String name, String address) {
-        Prefs.put(new String[][] {{"light_name", name}, {"light_address", address}});
+        Prefs.set(new String[][] {{"light_name", name}, {"light_address", address}});
     }
 
     static void forget() {
-        Prefs.put(new String[][] {{"light_name", ""}, {"light_address", ""}});
+        Prefs.set(new String[][] {{"light_name", ""}, {"light_address", ""}});
     }
 
     /** The saved position of a button (`fallback` until it has been set). */
@@ -102,7 +102,7 @@ final class Lights {
 
     static boolean saved(String key) { return !Prefs.lights(key).isEmpty(); }
 
-    static void save(String key, int index) { Prefs.put("light_" + key, String.valueOf(index)); }
+    static void save(String key, int index) { Prefs.set("light_" + key, String.valueOf(index)); }
 
     /** A color at a saturation, as the frame to send. */
     static byte[] colorFrame(int color, int saturation) {

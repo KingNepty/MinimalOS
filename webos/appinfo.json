@@ -1,0 +1,15 @@
+{
+  "id": "io.freemytv",
+  "version": "1.0.0",
+  "vendor": "MinimalOS",
+  "type": "web",
+  "main": "index.html",
+  "title": "MinimalOS",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "iconColor": "#FF7A9E",
+  "resolution": "1920x1080",
+  "handlesRelaunch": true,
+  "disableBackHistoryAPI": true,
+  "requiredPermissions": ["applications", "applications.launcher"]
+}

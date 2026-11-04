@@ -4,12 +4,12 @@
 
 # MinimalOS
 
-**A fast, ad-free home screen for Google TV, Android TV and Fire TV.**
+**A fast, ad-free home screen for Google TV, Android TV, Fire TV, LG and Samsung TVs.**
 
 Your apps, trending picks from them, the weather at a glance, your own photos as a background, and a look that follows the sunset.<br>
 Open source. Built with Claude Code. One button to undo.
 
-[Install](#install) · [Fire TV](#fire-tv) · [Any TV](#any-tv) · [Updates](#updates) · [Make it yours](#make-it-yours)
+[Install](#install) · [Fire TV](#fire-tv) · [LG TVs](#lg-tvs-webos) · [Samsung TVs](#samsung-tvs-tizen) · [Any TV](#any-tv) · [Updates](#updates) · [Make it yours](#make-it-yours)
 
 <img src=".github/preview.webp" width="880" alt="The MinimalOS home screen: a glass shelf of apps, trending picks, and a drawer with the weather and crypto prices">
 
@@ -95,6 +95,41 @@ If other services are already listed, add ours after them with a `:`. The permis
 
 **Optional: free up memory.** `tools/fire-debloat.sh <TV IP> off` turns off Amazon's shopping, promo, tutorial and usage-collection apps (never uninstalls them). `on` brings every one back.
 
+## LG TVs (webOS)
+
+The same home screen as an LG app: the picks, the glass shelf with your apps, the drawer with inputs, weather and prices, day and night, Home Settings and the shelf editor. It installs through LG's own Developer Mode, with nothing rooted or changed on the TV. LG's home screen stays where it is, and MinimalOS is one press of a number key away.
+
+You need an LG TV (webOS 3 or newer) and a computer on the same Wi-Fi, with Python 3.
+
+1. **On the TV**, open the LG Content Store and install **Developer Mode**. Sign in with a free [LG developer account](https://webostv.developer.lge.com), turn on **Dev Mode Status** (the TV restarts), then turn on **Key Server**. Write down the IP address and the passphrase it shows.
+2. **On your computer**, get the code and build. `config.properties` works as for Google TV (your city, your [TMDB key](#the-tmdb-key)):
+   ```bash
+   git clone https://github.com/KingNepty/MinimalOS && cd MinimalOS
+   python3 webos/build.py
+   ```
+3. **Install.** The first time, it asks for the TV's passphrase; updates don't:
+   ```bash
+   python3 webos/install.py 192.168.1.50
+   ```
+4. **On the TV**, while MinimalOS is open, hold a number key on the remote. From then on, that key opens it from anywhere.
+
+With Claude Code, say *"Install MinimalOS on my LG TV at 192.168.1.50. I live in Lisbon."* It builds the app and hands you the install command, so you type the passphrase yourself.
+
+Developer Mode lasts about 40 days: open the Developer Mode app now and then and press **EXTEND**. To remove MinimalOS, run `python3 webos/install.py 192.168.1.50 --uninstall`.
+
+## Samsung TVs (Tizen)
+
+The same home screen as a Samsung app, with everything the LG one has: the picks, the shelf, the drawer with the inputs, the weather and the prices, day and night, and its own settings. It installs through Samsung's own Developer Mode, with nothing rooted or changed on the TV, and Samsung's home screen stays where it is.
+
+You need a Samsung TV from 2017 or newer (Tizen 3+) and a computer on the same Wi-Fi.
+
+1. **On the TV**, open **Apps** and type `1 2 3 4 5` on the remote. Turn **Developer mode** on, type your computer's IP address in **Host PC IP**, and restart the TV.
+2. **On your computer**, download [TizenBrew Installer](https://github.com/reisxd/TizenBrewInstaller/releases/latest), the community's installer for Samsung TVs, open it and connect to your TV.
+3. **Install from GitHub:** type `KingNepty/MinimalOS`. On 2023 and newer TVs it asks you to sign in to your Samsung account once, to sign the app for your TV.
+4. **Straight to it:** in the TV's settings, under Start Screen Options, turn on **Autorun Last App**: the TV turns on into MinimalOS.
+
+This build takes your city from the TV's time zone. For your exact city and the trending picks, build it with your own `config.properties` and [TMDB key](#the-tmdb-key): open the folder in Claude Code and say *"Install MinimalOS on my Samsung TV at 192.168.1.50. I live in Lisbon."* It sets up Samsung's tools, and on 2023 and newer TVs you sign in to your Samsung account in the browser to make the certificate.
+
 ## Settings
 
 Defaults come from `config.properties`, created by the first build. Whatever you change on the TV (Settings → Preferences) wins over the file.
@@ -105,7 +140,8 @@ Defaults come from `config.properties`, created by the first build. Whatever you
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `latitude`, `longitude` | Your city, for the weather and the sunset | New York |
 | `city` | The name on the weather card | `Weather` |
-| `language` | `auto` (follows the TV), `en` or `pt` | `auto` |
+| `language` | `auto` (follows the TV), `en`, `es`, `pt`, `ru`, `fr` or `de` | `auto` |
+| `show_crypto` | Show Binance crypto prices on home and screensaver | `true` |
 | `currency` | Crypto prices in `USD`, `EUR`, `BRL`… | `USD` |
 | `temperature` | `C`, `F` or `auto` | `auto` |
 | `disable_assistant` | Also turn off Google Assistant | `false` |

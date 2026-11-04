@@ -19,6 +19,7 @@ public class HomeReceiver extends BroadcastReceiver {
         } else if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             HomeKeyService.enableSelf(context);   // the update turned the service off
             HomeMode.verify(context);   // app updated: complete MinimalOS mode if something is missing
+            HomeMode.ensureRemoteService(context, 3_000);
             // And get back to our home screen (Android may refuse a start from the background; on Fire OS the
             // accessibility service does the same when it comes back, see HomeKeyService).
             try {

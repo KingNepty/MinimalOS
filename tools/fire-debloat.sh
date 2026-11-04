@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fire TV: turns off Amazon's shopping, promo, tutorial and usage-collection apps (never uninstalls them), so the TV has
-# more memory and less background work for Free My TV. Run from a computer with adb:
+# more memory and less background work for MinimalOS. Run from a computer with adb:
 #   tools/fire-debloat.sh <TV IP> off     turn them off
 #   tools/fire-debloat.sh <TV IP> on      bring every one of them back
 # Nothing here is needed for picture, sound, inputs, the remote, updates or Alexa. Not touched: the launcher, settings,

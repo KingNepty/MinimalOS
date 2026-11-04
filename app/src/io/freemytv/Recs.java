@@ -63,12 +63,13 @@ final class Recs {
     private static final int MAX_PICKS = 40, PER_SERVICE = 5;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     static final String[] PERIOD_LABEL = {"PARA ESTA MANHÃ", "PARA ESTA TARDE", "PARA ESTA NOITE"};
+    static final String[] PERIOD_LABEL_RU = {"ЭТИМ УТРОМ", "СЕГОДНЯ ДНЁМ", "СЕГОДНЯ ВЕЧЕРОМ"};
     static final String[] PERIOD_LABEL_EN = {"THIS MORNING", "THIS AFTERNOON", "TONIGHT"};
     static final String[] PERIOD_LABEL_FR = {"POUR CE MATIN", "POUR CET APRÈS-MIDI", "POUR CE SOIR"};
-    /**
-     * Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). Several packages for one
-     * app are separated by "|" (the first one the TV has is used). The ones the TV doesn't have are simply left out.
-     */
+    static final String[] PERIOD_LABEL_ES = {"PARA ESTA MAÑANA", "PARA ESTA TARDE", "PARA ESTA NOCHE"};
+    static final String[] PERIOD_LABEL_DE = {"HEUTE MORGEN", "HEUTE NACHMITTAG", "HEUTE ABEND"};
+    /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). Several packages for one
+     *  app are separated by "|" (the first one the TV has is used). The ones the TV doesn't have are simply left out. */
     private static final String[][] SERVICES = {
         {"netflix", "netflix", "com.netflix.ninja"},
         {"prime video", "prime", "com.amazon.amazonvideo.livingroom|com.amazon.firebat"},
@@ -128,7 +129,7 @@ final class Recs {
     private volatile String error = "";
     private volatile boolean light;     // light design: builds only the cards (all three tabs' cards fit in memory)
     private volatile long failedAt, keyStamp;
-    private volatile String listLang = "";   // language the saved list came in (titles, genres and texts)
+    private volatile String listLanguage = "";   // language used for the saved titles, genres and texts
 
     private Recs(Context c) {
         context = c;
@@ -139,7 +140,7 @@ final class Recs {
             if (saved != null) picks = parse(new JSONArray(saved));
             period = cache.getInt("period", -1);
             listAt = cache.getLong("listAt", 0);
-            listLang = cache.getString("lang", cache.getBoolean("english", false) ? "en" : "pt");
+            listLanguage = cache.getString("language", cache.getBoolean("english", false) ? "en" : "pt");
             keyStamp = cache.getLong("keyStamp", 0);
         } catch (Exception ignored) {
         }
@@ -174,7 +175,8 @@ final class Recs {
     String error() { return error; }
 
     static String periodLabel() {
-        return (Ui.en ? PERIOD_LABEL_EN : Ui.fr ? PERIOD_LABEL_FR : PERIOD_LABEL)[period(System.currentTimeMillis())];
+        return (Ui.ru ? PERIOD_LABEL_RU : Ui.es ? PERIOD_LABEL_ES : Ui.de ? PERIOD_LABEL_DE : Ui.fr ? PERIOD_LABEL_FR
+                : Ui.en ? PERIOD_LABEL_EN : PERIOD_LABEL)[period(System.currentTimeMillis())];
     }
 
     private static int period(long now) {
@@ -193,8 +195,10 @@ final class Recs {
     List<Pick> now(String kind) {
         List<Pick> list = new ArrayList<>();
         if (!hasKey(context)) return list;    // no TMDB key: no recommendations
+        Map<String, Boolean> have = new HashMap<>();   // one look per app, not per title (this runs every 15 s)
         for (Pick p : picks) {
-            if ((kind == null || kind.equals(p.kind)) && (!p.detailed || p.pkg != null)) list.add(p);   // app missing: skip
+            if ((kind == null || kind.equals(p.kind))
+                    && (!p.detailed || (p.pkg != null && have.computeIfAbsent(p.pkg, this::installed)))) list.add(p);   // app missing: skip
         }
         return three(list);
     }
@@ -277,13 +281,13 @@ final class Recs {
     void refreshIfStale() {
         if (!hasKey(context) || fetching) return;
         long now = System.currentTimeMillis();
-        long stamp = Config.TMDB_KEY.hashCode() * 31L + region().hashCode();   // a new key or country refetches
+        long stamp = sourceStamp();   // a new key, country or installed streaming-app set refetches
         boolean newKey = stamp != keyStamp;
         long sinceFail = now - failedAt;    // negative = the clock went back: don't wait
         if (!newKey && failedAt != 0 && sinceFail >= 0 && sinceFail < 10 * 60_000L) return;
         int p = period(now);
         boolean stale = newKey || p != period || now - listAt > LIST_EVERY || now < listAt || picks.isEmpty()
-                || !listLang.equals(Ui.lang);
+                || !listLanguage.equals(Ui.language);
         boolean missing = false;
         for (Pick pick : wanted()) missing |= !pick.detailed || !hasImage(pick);
         if (!stale && !missing) return;
@@ -339,8 +343,10 @@ final class Recs {
         if (!hasKey(context)) return out;
         java.util.Set<String> seen = new java.util.HashSet<>();
         for (Pick p : wanted()) if (hasImage(p) && seen.add(franchise(p.title))) out.add(p);
+        Map<String, Boolean> have = new HashMap<>();
         for (Pick p : picks) {
-            if (p.detailed && p.pkg != null && hasImage(p) && seen.add(franchise(p.title))) out.add(p);
+            if (p.detailed && p.pkg != null && have.computeIfAbsent(p.pkg, this::installed) && hasImage(p)
+                    && seen.add(franchise(p.title))) out.add(p);
         }
         return out;
     }
@@ -555,7 +561,7 @@ final class Recs {
         picks = list;
         period = p;
         listAt = System.currentTimeMillis();
-        listLang = Ui.lang;
+        listLanguage = Ui.language;
     }
 
     /** add(), skipping a title the list already has. */
@@ -572,7 +578,11 @@ final class Recs {
 
     /** Language of titles and genres; the services come from the region. */
     private static String lang() {
-        return Ui.en ? "en-US" : Ui.fr ? "fr-FR" : "pt-BR";
+        if (Ui.ru) return "ru-RU";
+        if (Ui.fr) return "fr-FR";
+        if (Ui.es) return "ES".equals(java.util.Locale.getDefault().getCountry()) ? "es-ES" : "es-MX";
+        if (Ui.de) return "de-DE";   // TMDB's de-AT and de-CH have few translations of their own
+        return Ui.en ? "en-US" : "pt-BR";
     }
 
     private static void alternate(List<Pick> out, java.util.Set<String> seen, List<Pick> a, List<Pick> b, int max) {
@@ -603,7 +613,8 @@ final class Recs {
     /** Genre, runtime (or seasons) and the service it's on, among the ones the TV has. */
     private void fetchDetails(Pick p) throws Exception {
         JSONObject o = get("/" + p.kind + "/" + p.id
-                + "?language=" + lang() + "&append_to_response=watch/providers,images&include_image_language=null,pt,en,fr");
+                + "?language=" + lang() + "&append_to_response=watch/providers,images&include_image_language=null," + Ui.language + ",en");
+        p.title = title(p, o);
         String best = bestBackdrop(o.optJSONObject("images"));
         if (best != null) p.backdrop = best;
         List<String> parts = new ArrayList<>();
@@ -615,16 +626,18 @@ final class Recs {
         }
         if (p.kind.equals("movie")) {
             int minutes = o.optInt("runtime");
-            if (minutes > 0 && Ui.en) parts.add(minutes >= 60 ? (minutes / 60) + "h " + (minutes % 60) + "m" : minutes + "m");
-            else if (minutes > 0 && Ui.fr) parts.add(minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min");
+            if (minutes > 0 && Ui.ru) parts.add(minutes >= 60 ? (minutes / 60) + " ч " + (minutes % 60) + " мин" : minutes + " мин");
+            else if (minutes > 0 && Ui.en) parts.add(minutes >= 60 ? (minutes / 60) + "h " + (minutes % 60) + "m" : minutes + "m");
             else if (minutes > 0) parts.add(minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : minutes + " min");
         } else {
             int seasons = o.optInt("number_of_seasons");
             JSONObject last = o.optJSONObject("last_episode_to_air");
             int current = last == null ? 0 : last.optInt("season_number");
             p.season = current > 0 ? current : seasons;
-            if (seasons > 0 && Ui.en) parts.add(seasons == 1 ? "1 season" : seasons + " seasons");
+            if (seasons > 0 && Ui.ru) parts.add(Russian.count(seasons, "сезон", "сезона", "сезонов"));
+            else if (seasons > 0 && Ui.en) parts.add(seasons == 1 ? "1 season" : seasons + " seasons");
             else if (seasons > 0 && Ui.fr) parts.add(seasons == 1 ? "1 saison" : seasons + " saisons");
+            else if (seasons > 0 && Ui.de) parts.add(seasons == 1 ? "1 Staffel" : seasons + " Staffeln");
             else if (seasons > 0) parts.add(seasons == 1 ? "1 temporada" : seasons + " temporadas");
         }
         JSONObject wp = o.optJSONObject("watch/providers");
@@ -646,11 +659,29 @@ final class Recs {
     static String[] caption(Pick p) {
         String title = p.title == null ? "" : p.title;
         if ("tv".equals(p.kind) && p.season > 0) {
-            title += " · " + (Ui.en ? "Season " : Ui.fr ? "Saison " : "Temporada ") + p.season;
+            title += " · " + (Ui.fr ? "Saison " : Ui.tr("Temporada ", "Season ")) + p.season;
         }
         String name = p.app == null ? null : SERVICE_NAME.get(p.app);
-        String sub = name == null ? "" : (Ui.en ? "Now on " : Ui.fr ? "Maintenant sur " : "Agora em ") + name;
+        String sub = name == null ? "" : (Ui.fr ? "Maintenant sur " : Ui.tr("Agora em ", "Now on ")) + name;
         return new String[] {title, sub};
+    }
+
+    /**
+     * Without a title in the TV's language TMDB answers with the original one, so a Korean series on a German TV reads
+     * "닥터X: 하얀 마피아의 시대". Then the English title, when TMDB has one (one more request, only for those).
+     */
+    private String title(Pick p, JSONObject o) {
+        String field = p.kind.equals("movie") ? "title" : "name";
+        String own = o.optString(field, p.title);
+        String original = o.optString("original_language");
+        if (Ui.en || own.isEmpty() || !own.equals(o.optString("original_" + field))
+                || Ui.language.equals(original) || "en".equals(original)) return own;
+        try {
+            String english = get("/" + p.kind + "/" + p.id + "?language=en-US").optString(field);
+            return english.isEmpty() ? own : english;
+        } catch (Exception e) {
+            return own;
+        }
     }
 
     /** TV genres that TMDB returns in English even in pt-BR. */
@@ -658,6 +689,15 @@ final class Recs {
         {"Action & Adventure", "Ação e Aventura"}, {"Sci-Fi & Fantasy", "Ficção Científica e Fantasia"},
         {"War & Politics", "Guerra e Política"}, {"Kids", "Infantil"}, {"News", "Notícias"}, {"Soap", "Novela"},
         {"Talk", "Entrevistas"},
+    };
+    private static final String[][] GENRES_ES = {
+        {"Action & Adventure", "Acción y Aventura"}, {"Sci-Fi & Fantasy", "Ciencia ficción y Fantasía"},
+        {"War & Politics", "Guerra y Política"}, {"Kids", "Infantil"}, {"News", "Noticias"},
+        {"Soap", "Telenovela"}, {"Talk", "Entrevistas"},
+    };
+    private static final String[][] GENRES_DE = {
+        {"Action & Adventure", "Action & Abenteuer"}, {"War & Politics", "Krieg & Politik"}, {"Kids", "Kinder"},
+        {"News", "Nachrichten"}, {"Soap", "Seifenoper"}, {"Talk", "Talkshow"},
     };
 
     private static final String[][] GENRES_FR = {
@@ -667,22 +707,14 @@ final class Recs {
     };
 
     private static String genre(String name) {
-        for (String[] g : Ui.fr ? GENRES_FR : GENRES_PT) if (g[0].equalsIgnoreCase(name)) return g[1];
+        if (Ui.ru) return Russian.text(name);
+        for (String[] g : Ui.fr ? GENRES_FR : Ui.es ? GENRES_ES : Ui.de ? GENRES_DE : GENRES_PT) if (g[0].equalsIgnoreCase(name)) return g[1];
         return name;
     }
 
-    /** The same for lists saved earlier ("Série · Action & Adventure · …" in Portuguese). */
-    private static String fixGenres(String meta) {
-        for (String[] g : GENRES_PT) {
-            meta = meta.replace(" · " + g[0] + " ·", " · " + g[1] + " ·");
-            if (meta.endsWith(" · " + g[0])) meta = meta.substring(0, meta.length() - g[0].length()) + g[1];
-        }
-        return meta;
-    }
-
     /**
-     * The title's best backdrop: no text written over it (our own text goes on top of it), at the highest resolution
-     * (up to 3840, TMDB's 4K) and, on a tie, the highest rated.
+     * The title's best backdrop: no text written over it (our own text goes on top of it), the closest to 1920 wide
+     * (larger only costs download, disk and decoding) and, on a tie, the highest rated.
      */
     private static String bestBackdrop(JSONObject images) {
         JSONArray list = images == null ? null : images.optJSONArray("backdrops");
@@ -693,7 +725,7 @@ final class Recs {
             if (b == null || b.optString("file_path", "").isEmpty()) continue;
             boolean textless = b.isNull("iso_639_1");
             int width = b.optInt("width");
-            double score = (textless ? 1e7 : 0) + Math.min(width, 3840) * 100 + b.optDouble("vote_average", 0);
+            double score = (textless ? 1e7 : 0) + Math.min(width, 1920) * 100 - Math.max(0, width - 1920) + b.optDouble("vote_average", 0);
             if (score > bestScore) {
                 bestScore = score;
                 best = b.optString("file_path");
@@ -717,6 +749,16 @@ final class Recs {
             if (HomeApps.launchIntent(context.getPackageManager(), pkg) != null) return pkg;
         }
         return null;
+    }
+
+    private boolean installed(String pkg) {
+        return HomeApps.launchIntent(context.getPackageManager(), pkg) != null;
+    }
+
+    private long sourceStamp() {
+        long stamp = Config.TMDB_KEY.hashCode() * 31L + region().hashCode();
+        for (String[] service : SERVICES) stamp = stamp * 31L + (installed(service[2]) ? service[2].hashCode() : 0);
+        return stamp;
     }
 
     private JSONObject get(String path) throws IOException, org.json.JSONException {
@@ -759,6 +801,10 @@ final class Recs {
             byte[] buffer = new byte[16384];
             int n;
             while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+        } catch (IOException e) {
+            //noinspection ResultOfMethodCallIgnored
+            part.delete();
+            throw e;
         } finally {
             c.disconnect();
         }
@@ -798,9 +844,25 @@ final class Recs {
         }
     }
 
+    void trim() {
+        // Explore's picks stay: the home screen opens on that tab, so its cards are never gray when you come back.
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        for (Pick p : now(null)) if (p.backdrop != null) keep.add(p.backdrop);
+        synchronized (images) {
+            images.keySet().retainAll(keep);
+        }
+    }
+
     private static void prune(File dir) {
-        File[] files = dir.listFiles();
-        if (files == null || files.length <= MAX_PICKS) return;
+        // A download cut off when the system stopped the app leaves its .part behind.
+        long stale = System.currentTimeMillis() - 10 * 60_000L;
+        File[] parts = dir.listFiles((d, name) -> name.endsWith(".part"));
+        for (int i = 0; parts != null && i < parts.length; i++) {
+            //noinspection ResultOfMethodCallIgnored
+            if (parts[i].lastModified() < stale) parts[i].delete();
+        }
+        File[] files = dir.listFiles((d, name) -> !name.endsWith(".part"));
+        if (files == null || files.length <= 24) return;
         Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
         for (int i = 0; i < files.length - MAX_PICKS; i++) {
             //noinspection ResultOfMethodCallIgnored
@@ -819,7 +881,7 @@ final class Recs {
                         .put("detailed", p.detailed).put("season", p.season));
             }
             cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
-                    .putString("lang", listLang)
+                    .putString("language", listLanguage)
                     .putLong("keyStamp", keyStamp).putInt("version", CACHE_VERSION).apply();
         } catch (Exception ignored) {
         }
@@ -835,7 +897,7 @@ final class Recs {
             p.kind = o.optString("kind");
             p.title = o.optString("title");
             p.backdrop = o.optString("backdrop");
-            p.meta = fixGenres(o.optString("meta"));
+            p.meta = o.optString("meta");
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");

@@ -6,9 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.RecordingCanvas;
 import android.graphics.RectF;
-import android.graphics.RenderNode;
 import android.graphics.RuntimeShader;
 import android.graphics.Shader;
 
@@ -30,14 +28,22 @@ final class Scene {
     private final Paint flatFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint flatRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint fallback = new Paint();
-    private final RenderNode auroraNode = new RenderNode("aurora");
+    private final Recording auroraNode = Recording.create("aurora");
+    // The layer is drawn at a quarter size and scaled up: filtered, its soft shapes stay soft instead of stepping.
+    private final Paint layerPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private int w = 1, h = 1, lw = 1, lh = 1;
     private float speed = 1, baseDim, dim, time;
     private boolean auroraDirty = true, imageFrost, imageGlass;
     private Bitmap frostImage, glassA, glassB;
     private BitmapShader glassShaderA;
+    private final boolean withGlass;
 
     Scene() {
+        this(true);
+    }
+
+    Scene(boolean withGlass) {
+        this.withGlass = withGlass;
         try {
             aurora = new RuntimeShader(Shaders.AURORA);
             glass = new RuntimeShader(Shaders.GLASS);
@@ -45,13 +51,13 @@ final class Scene {
             auroraPaint.setShader(aurora);
             glassPaint.setShader(glass);
             liquidPaint.setShader(liquid);
-        } catch (RuntimeException | LinkageError e) {   // Android 12: no AGSL, flat look instead
+        } catch (RuntimeException | LinkageError e) {   // Android 9 to 12: no AGSL, flat look instead
             AppLog.w("shader unavailable, using gradient: " + e.getMessage());
             aurora = null;
             glass = null;
             liquid = null;
         }
-        auroraNode.setUseCompositingLayer(true, null);
+        auroraNode.setUseCompositingLayer(true, layerPaint);
         flatRim.setStyle(Paint.Style.STROKE);
         flatRim.setColor(0x33FFFFFF);
         flatRim.setStrokeWidth(1.5f);
@@ -99,7 +105,7 @@ final class Scene {
         time = seconds;
         if (aurora == null) return;
         aurora.setFloatUniform("t", seconds);
-        if (!imageFrost || !imageGlass) {
+        if (withGlass && (!imageFrost || !imageGlass)) {
             BitmapShader s = frost.render(seconds, speed, dim, palette.c, (float) w / h);
             if (!imageFrost) glass.setInputShader("frost", s);
             if (!imageGlass) {
@@ -221,7 +227,7 @@ final class Scene {
             return;
         }
         if (auroraDirty) {
-            RecordingCanvas rc = auroraNode.beginRecording(lw, lh);
+            Canvas rc = auroraNode.beginRecording(lw, lh);
             try {
                 rc.drawPaint(auroraPaint);
             } finally {
@@ -231,7 +237,7 @@ final class Scene {
         }
         c.save();
         c.scale((float) w / lw, (float) h / lh);
-        c.drawRenderNode(auroraNode);
+        auroraNode.draw(c);
         c.restore();
     }
 

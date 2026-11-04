@@ -7,12 +7,15 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.os.Build;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.function.Supplier;
 
 /**
  * Fonts and text for the home screen, the screensaver and the settings. Font: Inter (variable, assets/fonts, SIL OFL),
@@ -22,11 +25,15 @@ import java.util.Locale;
 final class Ui {
     private Ui() {}
 
+    /** Android 9 to 11: older TVs and boxes, whose GPUs need the cheaper drawing paths (Shadows, rounded images). */
+    static final boolean LEGACY = Build.VERSION.SDK_INT < 31;
+    static final Locale RU = new Locale("ru", "RU");
     static final Locale PT = new Locale("pt", "BR");
     static final Locale FR = Locale.FRANCE;
-    /** "en", "pt" or "fr", from config.properties ("language") or, with "auto", the TV's own language. */
-    static volatile String lang = detect();
-    static volatile boolean en = lang.equals("en"), fr = lang.equals("fr");
+    /** English, Portuguese, Spanish, German, Russian or French, from the settings or, with "auto", the TV's own language. */
+    static volatile String language = language();
+    static volatile boolean en = "en".equals(language), es = "es".equals(language), de = "de".equals(language),
+            ru = "ru".equals(language), fr = "fr".equals(language);
     static Typeface thin, light, displayMedium, displaySemibold, regular, medium, semibold;
     private static boolean loaded;
     private static final Rect BOUNDS = new Rect();
@@ -62,26 +69,22 @@ final class Ui {
 
     private static final String FONT = "fonts/InterVariable.ttf";
 
-    /** "en", "pt" or "fr" in config.properties, or "auto": the TV's language if it's Portuguese or French, else English. */
-    static String detect() {
-        String want = Prefs.language().trim().toLowerCase(Locale.ROOT);
-        if (want.startsWith("pt")) return "pt";
-        if (want.startsWith("fr")) return "fr";
-        if (want.startsWith("en")) return "en";
-        String tv = Locale.getDefault().getLanguage();
-        return "pt".equals(tv) || "fr".equals(tv) ? tv : "en";
+    /** "pt", "es", "de", "ru", "fr" or "en": the one picked (TV settings or config.properties), or with "auto" the TV's own, else English. */
+    private static String language() {
+        String lang = Prefs.language();
+        if (!lang.equals("auto")) return lang;
+        lang = Locale.getDefault().getLanguage();
+        return "pt".equals(lang) || "es".equals(lang) || "de".equals(lang) || "ru".equals(lang) || "fr".equals(lang) ? lang : "en";
     }
 
-    /** Re-reads the language (Settings → Preferences changes it while the app is running). */
+    /** After the language changes in the settings (and once Prefs can read them). */
     static void applyLanguage() {
-        lang = detect();
-        en = lang.equals("en");
-        fr = lang.equals("fr");
-    }
-
-    /** For dates, numbers and capital letters in the language in use. */
-    static Locale locale() {
-        return en ? Locale.US : fr ? FR : PT;
+        language = language();
+        en = "en".equals(language);
+        es = "es".equals(language);
+        de = "de".equals(language);
+        ru = "ru".equals(language);
+        fr = "fr".equals(language);
     }
 
     private static boolean has(AssetManager a, String path) {
@@ -139,7 +142,28 @@ final class Ui {
     }
 
     static String tr(String pt, String english) {
-        return en ? english : fr ? French.of(english) : pt;
+        return de ? German.text(english) : ru ? Russian.text(english) : es ? Spanish.text(english) : fr ? French.of(english) : en ? english : pt;
+    }
+
+    /** German comes from German.java here too (keyed by the English, with patterns for text built at runtime). */
+    static String tr(String pt, String english, String spanish) {
+        return de ? German.text(english) : ru ? Russian.text(english) : es ? spanish : fr ? French.of(english) : en ? english : pt;
+    }
+
+    static Locale locale() {
+        return ru ? RU : es ? spanish() : de ? german() : fr ? FR : en ? Locale.US : PT;
+    }
+
+    /** The TV's own Spanish (es-MX, es-AR…) when it is in Spanish, Spain's otherwise. */
+    private static Locale spanish() {
+        Locale tv = Locale.getDefault();
+        return "es".equals(tv.getLanguage()) ? tv : new Locale("es", "ES");
+    }
+
+    /** The TV's own German (de-AT, de-CH…) when it is in German, Germany's otherwise. */
+    private static Locale german() {
+        Locale tv = Locale.getDefault();
+        return "de".equals(tv.getLanguage()) ? tv : Locale.GERMANY;
     }
 
     /** "21:47" (in English, "9:47", like the iPhone in the US). */
@@ -150,15 +174,35 @@ final class Ui {
 
     /** "5:21" (sunrise and sunset; in English, "5:21 AM"). */
     static String time(long at) {
-        return en ? new SimpleDateFormat("h:mm a", Locale.US).format(new Date(at))
-                : new SimpleDateFormat("H:mm", locale()).format(new Date(at));
+        return once("time", at, () -> en ? new SimpleDateFormat("h:mm a", Locale.US).format(new Date(at))
+                : new SimpleDateFormat("H:mm", locale()).format(new Date(at)));
     }
 
-    /** "domingo, 18 de outubro" (lowercase, like the iPhone in Portuguese); "dimanche 18 octobre"; "Sunday, October 18" in English. */
+    private static final HashMap<String, String> FORMATTED = new HashMap<>();
+
+    /**
+     * A formatted value, made once per language: the bottom drawer is redrawn on every frame of its focus animation,
+     * and SimpleDateFormat and String.format there cost ~10 ms a frame on a Mi Box 3.
+     */
+    static String once(String kind, double value, Supplier<String> format) {
+        String key = kind + '|' + language + '|' + value;
+        synchronized (FORMATTED) {
+            String s = FORMATTED.get(key);
+            if (s == null) {
+                if (FORMATTED.size() > 200) FORMATTED.clear();
+                s = format.get();
+                FORMATTED.put(key, s);
+            }
+            return s;
+        }
+    }
+
+    /** "domingo, 18 de outubro" (lowercase, like the iPhone in Portuguese); "Sunday, October 18" in English; "Sonntag, 18. Oktober". */
     static String date(long now) {
         if (fr) return new SimpleDateFormat("EEEE d MMMM", FR).format(new Date(now));
-        return en ? new SimpleDateFormat("EEEE, MMMM d", Locale.US).format(new Date(now))
-                : new SimpleDateFormat("EEEE, d 'de' MMMM", PT).format(new Date(now));
+        return ru ? new SimpleDateFormat("EEEE, d MMMM", locale()).format(new Date(now))
+                : en ? new SimpleDateFormat("EEEE, MMMM d", Locale.US).format(new Date(now))
+                : new SimpleDateFormat(de ? "EEEE, d. MMMM" : "EEEE, d 'de' MMMM", locale()).format(new Date(now));
     }
 
     /** Spinning arc (work in progress). */
